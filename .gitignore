@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+venv/
+.env
+
+# JavaScript
+node_modules/
+.next/
+dist/
+build/
+coverage/
+
+# Infrastructure
+cdk.out/
+.aws-sam/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
