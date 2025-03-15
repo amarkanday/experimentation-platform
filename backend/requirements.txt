@@ -1,6 +1,73 @@
-# Python dependencies
-fastapi>=0.95.0
-uvicorn>=0.22.0
-sqlalchemy>=2.0.0
-pydantic>=1.10.0
-aws-sdk-pandas>=2.20.0
+# API Framework
+fastapi==0.103.1
+uvicorn[standard]==0.23.2
+pydantic==2.3.0
+pydantic-settings==2.0.3
+email-validator==2.0.0.post2
+python-multipart==0.0.6
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+
+# Database & ORM
+sqlalchemy==2.0.20
+alembic==1.12.0
+psycopg2-binary==2.9.7
+asyncpg==0.28.0
+aiomysql==0.2.0
+redis==4.6.0
+boto3==1.28.40
+boto3-stubs[dynamodb,s3,kinesis,lambda]==1.28.40
+
+# AWS
+aws-cdk-lib==2.94.0
+aws-cdk.aws-apigateway==1.204.0
+aws-cdk.aws-lambda==1.204.0
+aws-cdk.aws-dynamodb==1.204.0
+aws-cdk.aws-kinesis==1.204.0
+aws-cdk.aws-opensearchservice==1.204.0
+aws-lambda-powertools==2.24.0
+aws-xray-sdk==2.12.0
+
+# Testing
+pytest==7.4.2
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+pytest-mock==3.11.1
+httpx==0.24.1
+faker==19.6.2
+factory-boy==3.3.0
+freezegun==1.2.2
+moto==4.2.2
+
+# Statistical Analysis
+numpy==1.25.2
+scipy==1.11.2
+pandas==2.1.0
+statsmodels==0.14.0
+
+# Utilities
+python-dateutil==2.8.2
+pyyaml==6.0.1
+jinja2==3.1.2
+tenacity==8.2.3
+structlog==23.1.0
+orjson==3.9.5
+ujson==5.8.0
+
+# Monitoring & Tracing
+opentelemetry-api==1.19.0
+opentelemetry-sdk==1.19.0
+opentelemetry-exporter-otlp==1.19.0
+prometheus-client==0.17.1
+
+# Development
+black==23.7.0
+isort==5.12.0
+mypy==1.5.1
+flake8==6.1.0
+pre-commit==3.4.0
+
+# Documentation
+mkdocs==1.5.3
+mkdocs-material==9.2.8
+mkdocstrings==0.22.0
