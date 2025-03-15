@@ -1,0 +1,1 @@
+# Event Pydantic schemas

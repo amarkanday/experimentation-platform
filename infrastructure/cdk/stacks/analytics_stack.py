@@ -1,0 +1,1 @@
+# Analytics infrastructure (Kinesis, OpenSearch)

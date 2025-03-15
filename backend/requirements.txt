@@ -1,0 +1,6 @@
+# Python dependencies
+fastapi>=0.95.0
+uvicorn>=0.22.0
+sqlalchemy>=2.0.0
+pydantic>=1.10.0
+aws-sdk-pandas>=2.20.0

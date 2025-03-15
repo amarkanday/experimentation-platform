@@ -1,0 +1,1 @@
+# Event collection endpoints
