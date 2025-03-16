@@ -3,7 +3,7 @@
 Below is a comprehensive `docker-compose.yml` file for setting up a local development environment for the experimentation platform. This configuration includes all necessary services: PostgreSQL, Redis, LocalStack (for AWS services emulation), and optional application containers.
 
 ```yaml
-version: "3.8"
+version:"3.8"
 
 services:
     # PostgreSQL database

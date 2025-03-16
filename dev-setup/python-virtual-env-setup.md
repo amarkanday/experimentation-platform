@@ -19,7 +19,7 @@ requirements/
 ### Base Requirements (requirements/base.txt)
 
 ```
-# API Framework
+# API Frameworks
 fastapi==0.103.1
 uvicorn[standard]==0.23.2
 pydantic==2.3.0

@@ -2,7 +2,7 @@
 
 This document provides the recommended VSCode settings for the experimentation platform project. These settings ensure a consistent development experience for all team members and enforce the project's coding standards automatically.
 
-## Setup Instructions
+## Setup Instruction
 
 1. Create a `.vscode` folder in the project root directory:
 

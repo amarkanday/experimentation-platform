@@ -4,7 +4,7 @@ This document describes the pre-commit hooks configuration for the experimentati
 
 ## Setup Instructions
 
-1. Install pre-commit:
+1. Install pre-commit :
 
 ```bash
 pip install pre-commit
