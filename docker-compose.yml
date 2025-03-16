@@ -1,1 +1,131 @@
 # Docker Compose configuration for local development
+version: "3.8"
+
+services:
+  # PostgreSQL database
+  postgres:
+    image: postgres:14-alpine
+    container_name: experimentation-postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=experimentation
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Redis for caching
+  redis:
+    image: redis:7-alpine
+    container_name: experimentation-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # LocalStack for AWS services emulation
+  localstack:
+    image: localstack/localstack:latest
+    container_name: experimentation-localstack
+    ports:
+      - "4566:4566"
+      - "4510-4559:4510-4559"
+    environment:
+      - SERVICES=dynamodb,s3,kinesis,lambda,cognito-idp,ssm,secretsmanager
+      - DEBUG=1
+      - DATA_DIR=/tmp/localstack/data
+    volumes:
+      - ./localstack:/docker-entrypoint-initaws.d
+      - localstack_data:/tmp/localstack
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Elasticsearch for analytics
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.0
+    container_name: experimentation-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - xpack.security.enabled=false
+    ports:
+      - "9200:9200"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Kibana for visualizing Elasticsearch data
+  kibana:
+    image: docker.elastic.co/kibana/kibana:7.17.0
+    container_name: experimentation-kibana
+    depends_on:
+      - elasticsearch
+    ports:
+      - "5601:5601"
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+
+  # Adminer for database management
+  adminer:
+    image: adminer:latest
+    container_name: experimentation-adminer
+    restart: always
+    depends_on:
+      - postgres
+    ports:
+      - "8080:8080"
+
+  # Initialize LocalStack with resources
+  localstack-init:
+    image: amazon/aws-cli:2.9.19
+    container_name: experimentation-localstack-init
+    entrypoint: /bin/sh
+    command: -c "sleep 10 && aws --endpoint-url=http://localstack:4566 dynamodb create-table --table-name experiment-assignments --attribute-definitions AttributeName=userId,AttributeType=S AttributeName=experimentId,AttributeType=S --key-schema AttributeName=userId,KeyType=HASH AttributeName=experimentId,KeyType=RANGE --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5 --region us-east-1 && aws --endpoint-url=http://localstack:4566 s3 mb s3://experimentation-events --region us-east-1"
+    environment:
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_DEFAULT_REGION=us-east-1
+    depends_on:
+      - localstack
+
+  # PGAdmin for PostgreSQL management (optional)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: experimentation-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com
+      PGADMIN_DEFAULT_PASSWORD: adminpassword
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+
+volumes:
+  postgres_data:
+  redis_data:
+  localstack_data:
+  elasticsearch_data:

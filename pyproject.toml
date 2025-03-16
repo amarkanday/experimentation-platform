@@ -50,3 +50,7 @@ python_files = "test_*.py"
 python_functions = "test_*"
 python_classes = "Test*"
 addopts = "--cov=app --cov-report=term-missing --no-cov-on-fail"
+
+[tool.bandit]
+exclude_dirs = ["tests", "venv", ".venv"]
+skips = ["B101", "B104"]  # Example skips, adjust as needed

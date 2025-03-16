@@ -1,0 +1,29 @@
+## docker-compose.yml file setup and run instructions
+
+This docker-compose.yml file sets up:
+
+PostgreSQL: Main relational database
+Redis: For caching and real-time data
+LocalStack: Emulates AWS services locally (DynamoDB, S3, Kinesis, Lambda, Cognito)
+Elasticsearch: For analytics and search
+Kibana: For visualizing Elasticsearch data
+Adminer: Web UI for database management
+PGAdmin: More advanced PostgreSQL management (optional)
+LocalStack Initialization: Creates required DynamoDB tables and S3 buckets
+
+To use this setup:
+
+Save this file as docker-compose.yml in your project root
+Create a localstack directory in your project root (for initialization scripts)
+Start the environment with: docker-compose up -d
+Access services at:
+
+PostgreSQL: localhost:5432
+Redis: localhost:6379
+LocalStack: localhost:4566
+Elasticsearch: localhost:9200
+Kibana: localhost:5601
+Adminer: localhost:8080
+PGAdmin: localhost:5050
+
+##
