@@ -1,14 +1,13 @@
-from typing import Generator
+from collections.abc import Generator
 
+from app.core.config import settings
+from app.db.session import SessionLocal
+from app.models.user import User
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
-
-from app.core.config import settings
-from app.db.session import SessionLocal
-from app.models.user import User
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/auth/login")
 

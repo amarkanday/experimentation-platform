@@ -61,54 +61,59 @@ The architecture is designed to provide high-performance experiment evaluation, 
 ## Core Components
 
 ### 1. Client-Facing Layer
-- **Amazon CloudFront**: Global CDN for delivering static assets and caching API responses
-- **Application Load Balancer**: For routing traffic to backend services
-- **Amazon API Gateway**: Manages APIs for experiment evaluation, event tracking, and admin functions
+
+-   **Amazon CloudFront**: Global CDN for delivering static assets and caching API responses
+-   **Application Load Balancer**: For routing traffic to backend services
+-   **Amazon API Gateway**: Manages APIs for experiment evaluation, event tracking, and admin functions
 
 ### 2. Application Layer
-- **Next.js Frontend (ECS/Fargate)**: Web UI for experiment management, feature flag configuration, and dashboards
-- **Core Backend Services (ECS/Fargate)**:
-  - Experiment Management Service
-  - Feature Flag Service
-  - Segmentation Service
-  - Analysis Service
-  - User Management Service
-- **Real-time Services (Lambda)**:
-  - Feature Flag Evaluation
-  - Experiment Assignment
-  - Event Processing
+
+-   **Next.js Frontend (ECS/Fargate)**: Web UI for experiment management, feature flag configuration, and dashboards
+-   **Core Backend Services (ECS/Fargate)**:
+    -   Experiment Management Service
+    -   Feature Flag Service
+    -   Segmentation Service
+    -   Analysis Service
+    -   User Management Service
+-   **Real-time Services (Lambda)**:
+    -   Feature Flag Evaluation
+    -   Experiment Assignment
+    -   Event Processing
 
 ### 3. Data Storage Layer
-- **Amazon Aurora PostgreSQL**: Primary database for:
-  - Experiment definitions
-  - Feature flag configurations
-  - User accounts and permissions
-  - Segmentation rules
-- **Amazon DynamoDB**: High-throughput NoSQL database for:
-  - Experiment assignments (user to variant mappings)
-  - Feature flag evaluations
-  - Real-time event tracking
-- **Amazon ElastiCache (Redis)**: In-memory caching for:
-  - Feature flag configurations
-  - Experiment assignments
-  - Segment membership
-- **Amazon S3**: Data lake for:
-  - Raw event data
-  - Analytics exports
-  - Audit logs
+
+-   **Amazon Aurora PostgreSQL**: Primary database for:
+    -   Experiment definitions
+    -   Feature flag configurations
+    -   User accounts and permissions
+    -   Segmentation rules
+-   **Amazon DynamoDB**: High-throughput NoSQL database for:
+    -   Experiment assignments (user to variant mappings)
+    -   Feature flag evaluations
+    -   Real-time event tracking
+-   **Amazon ElastiCache (Redis)**: In-memory caching for:
+    -   Feature flag configurations
+    -   Experiment assignments
+    -   Segment membership
+-   **Amazon S3**: Data lake for:
+    -   Raw event data
+    -   Analytics exports
+    -   Audit logs
 
 ### 4. Analytics & Processing Layer
-- **Amazon Kinesis**: Real-time data streaming for event collection
-- **AWS EventBridge**: Event bus for internal service communication
-- **Amazon OpenSearch Service**: Analytics engine for experiment results and dashboards
-- **AWS Glue & Athena**: ETL and ad-hoc query services for data analysis
+
+-   **Amazon Kinesis**: Real-time data streaming for event collection
+-   **AWS EventBridge**: Event bus for internal service communication
+-   **Amazon OpenSearch Service**: Analytics engine for experiment results and dashboards
+-   **AWS Glue & Athena**: ETL and ad-hoc query services for data analysis
 
 ### 5. Supporting Services
-- **Amazon Cognito**: User authentication and authorization
-- **AWS Lambda**: Serverless compute for real-time evaluation and event processing
-- **Amazon CloudWatch**: Monitoring, logging, and alerting
-- **AWS WAF**: Web application firewall for security
-- **AWS Secrets Manager**: Secure credential storage
+
+-   **Amazon Cognito**: User authentication and authorization
+-   **AWS Lambda**: Serverless compute for real-time evaluation and event processing
+-   **Amazon CloudWatch**: Monitoring, logging, and alerting
+-   **AWS WAF**: Web application firewall for security
+-   **AWS Secrets Manager**: Secure credential storage
 
 ## Key Service Implementations
 
@@ -207,80 +212,91 @@ The architecture is designed to provide high-performance experiment evaluation, 
 ## Key Technical Capabilities
 
 ### 1. Real-Time Feature Flag & Experiment Evaluation
-- **Lambda-based evaluation service** with <50ms p99 latency
-- **Consistent hashing algorithm** for stable user assignment
-- **Redis caching layer** for configuration data
-- **SDK implementations** for web, mobile, and server environments
+
+-   **Lambda-based evaluation service** with <50ms p99 latency
+-   **Consistent hashing algorithm** for stable user assignment
+-   **Redis caching layer** for configuration data
+-   **SDK implementations** for web, mobile, and server environments
 
 ### 2. High-Performance Event Collection
-- **Kinesis Data Streams** for handling millions of events per minute
-- **Batched event processing** to optimize throughput
-- **Event schema validation** and enrichment
-- **Real-time metrics aggregation** using DynamoDB counters
+
+-   **Kinesis Data Streams** for handling millions of events per minute
+-   **Batched event processing** to optimize throughput
+-   **Event schema validation** and enrichment
+-   **Real-time metrics aggregation** using DynamoDB counters
 
 ### 3. Statistical Analysis System
-- **Real-time significance testing** using OpenSearch aggregations
-- **Multi-metric analysis** with correction for multiple testing
-- **Bayesian analysis** for more nuanced experiment interpretation
-- **Automated experiment stopping** based on significance thresholds
+
+-   **Real-time significance testing** using OpenSearch aggregations
+-   **Multi-metric analysis** with correction for multiple testing
+-   **Bayesian analysis** for more nuanced experiment interpretation
+-   **Automated experiment stopping** based on significance thresholds
 
 ### 4. Segmentation & Targeting Engine
-- **Rich targeting rule evaluation** supporting complex logical operations
-- **User attribute-based targeting** (device, location, behavior)
-- **Sticky bucket assignment** for consistent user experience
-- **Gradual rollout control** with percentage-based targeting
+
+-   **Rich targeting rule evaluation** supporting complex logical operations
+-   **User attribute-based targeting** (device, location, behavior)
+-   **Sticky bucket assignment** for consistent user experience
+-   **Gradual rollout control** with percentage-based targeting
 
 ## Scalability & Reliability Considerations
 
 1. **High Availability**
-   - Multi-AZ deployments for all services
-   - Database read replicas for read scaling
-   - Service auto-scaling based on load
+
+    - Multi-AZ deployments for all services
+    - Database read replicas for read scaling
+    - Service auto-scaling based on load
 
 2. **Performance Optimization**
-   - Redis caching for feature flag/experiment configurations
-   - DynamoDB for high-throughput event ingestion
-   - API response caching at CloudFront edge locations
+
+    - Redis caching for feature flag/experiment configurations
+    - DynamoDB for high-throughput event ingestion
+    - API response caching at CloudFront edge locations
 
 3. **Operational Excellence**
-   - Infrastructure as Code using AWS CDK or CloudFormation
-   - Automated CI/CD pipelines for deployment
-   - Comprehensive monitoring and alerting
+    - Infrastructure as Code using AWS CDK or CloudFormation
+    - Automated CI/CD pipelines for deployment
+    - Comprehensive monitoring and alerting
 
 ## Implementation Requirements Fulfillment
 
 This architecture addresses all core requirements from the project specification:
 
 1. **Experiment Creation and Management**
-   - Supports all experiment types (A/B, multivariate, split URL, multi-armed bandit)
-   - Provides variant management with traffic distribution control
-   - Enables advanced segmentation and scheduling capabilities
-   - Allows real-time experiment control
+
+    - Supports all experiment types (A/B, multivariate, split URL, multi-armed bandit)
+    - Provides variant management with traffic distribution control
+    - Enables advanced segmentation and scheduling capabilities
+    - Allows real-time experiment control
 
 2. **Metrics and Events Tracking**
-   - Supports custom metrics definition
-   - Provides comprehensive event logging
-   - Offers real-time metrics reporting
-   - Includes statistical analysis capabilities
+
+    - Supports custom metrics definition
+    - Provides comprehensive event logging
+    - Offers real-time metrics reporting
+    - Includes statistical analysis capabilities
 
 3. **Randomization and Traffic Allocation**
-   - Implements random user assignment
-   - Supports controlled traffic allocation
-   - Enables real-time allocation adjustments
+
+    - Implements random user assignment
+    - Supports controlled traffic allocation
+    - Enables real-time allocation adjustments
 
 4. **Feature Flags Integration**
-   - Provides complete feature flag management
-   - Implements targeting rules
-   - Enables real-time feature control
-   - Supports multivariate flag configuration
-   - Allows gradual rollouts and immediate rollbacks
+
+    - Provides complete feature flag management
+    - Implements targeting rules
+    - Enables real-time feature control
+    - Supports multivariate flag configuration
+    - Allows gradual rollouts and immediate rollbacks
 
 5. **User Access Control and Permissions**
-   - Implements role-based access control
-   - Provides experiment-level permissions
-   - Maintains comprehensive audit logs
+
+    - Implements role-based access control
+    - Provides experiment-level permissions
+    - Maintains comprehensive audit logs
 
 6. **Results and Analysis**
-   - Offers robust statistical analysis
-   - Provides visualizations and dashboards
-   - Implements automated significance calculations
+    - Offers robust statistical analysis
+    - Provides visualizations and dashboards
+    - Implements automated significance calculations

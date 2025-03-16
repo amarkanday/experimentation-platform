@@ -12,21 +12,21 @@ By participating in this project, you agree to abide by our code of conduct. Ple
 
 If you find a bug, please submit a detailed issue that includes:
 
-- A clear title and description
-- Steps to reproduce the bug
-- Expected behavior
-- Actual behavior
-- Screenshots if applicable
-- Environment details
+-   A clear title and description
+-   Steps to reproduce the bug
+-   Expected behavior
+-   Actual behavior
+-   Screenshots if applicable
+-   Environment details
 
 ### Feature Requests
 
 We welcome feature suggestions. Please submit an issue with:
 
-- A clear title and description
-- The problem your feature would solve
-- Proposed implementation details if you have them
-- Any alternatives you've considered
+-   A clear title and description
+-   The problem your feature would solve
+-   Proposed implementation details if you have them
+-   Any alternatives you've considered
 
 ### Pull Requests
 
@@ -42,15 +42,16 @@ Follow these steps to submit a pull request:
 
 ### Pull Request Guidelines
 
-- Update documentation for any changed functionality
-- Add tests for new features
-- Keep pull requests focused on a single feature or bug fix
-- Follow code style guidelines
-- Ensure all tests pass before submitting
+-   Update documentation for any changed functionality
+-   Add tests for new features
+-   Keep pull requests focused on a single feature or bug fix
+-   Follow code style guidelines
+-   Ensure all tests pass before submitting
 
 ## Development Setup
 
 1. Clone the repository:
-   ```bash
-   git clone https://github.com/your-org/experimentation-platform.git
-   cd experimentation-platform
+    ```bash
+    git clone https://github.com/your-org/experimentation-platform.git
+    cd experimentation-platform
+    ```

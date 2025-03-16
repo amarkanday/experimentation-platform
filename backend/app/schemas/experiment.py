@@ -73,8 +73,8 @@ class ExperimentBase(BaseModel):
 
 
 class ExperimentCreate(ExperimentBase):
-    variants: Optional[List[VariantCreate]] = None
-    metrics: Optional[List[MetricCreate]] = None
+    variants: Optional[list[VariantCreate]] = None
+    metrics: Optional[list[MetricCreate]] = None
 
 
 class ExperimentUpdate(BaseModel):
@@ -84,8 +84,8 @@ class ExperimentUpdate(BaseModel):
     status: Optional[str] = None
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
-    variants: Optional[List[VariantCreate]] = None
-    metrics: Optional[List[MetricCreate]] = None
+    variants: Optional[list[VariantCreate]] = None
+    metrics: Optional[list[MetricCreate]] = None
 
 
 class ExperimentInDBBase(ExperimentBase):
@@ -98,5 +98,5 @@ class ExperimentInDBBase(ExperimentBase):
 
 
 class ExperimentResponse(ExperimentInDBBase):
-    variants: List[Variant] = []
-    metrics: List[Metric] = []
+    variants: list[Variant] = []
+    metrics: list[Metric] = []

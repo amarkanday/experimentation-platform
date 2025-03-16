@@ -1,18 +1,21 @@
 # Experiment management endpoints
 from typing import Any, List
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
-
 from app.api import deps
 from app.models.experiment import Experiment
-from app.schemas.experiment import ExperimentCreate, ExperimentResponse, ExperimentUpdate
+from app.schemas.experiment import (
+    ExperimentCreate,
+    ExperimentResponse,
+    ExperimentUpdate,
+)
 from app.services.experiment_service import ExperimentService
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
 
 router = APIRouter()
 
 
-@router.get("/", response_model=List[ExperimentResponse])
+@router.get("/", response_model=list[ExperimentResponse])
 def get_experiments(
     db: Session = Depends(deps.get_db),
     skip: int = 0,
@@ -26,7 +29,9 @@ def get_experiments(
     return experiments
 
 
-@router.post("/", response_model=ExperimentResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/", response_model=ExperimentResponse, status_code=status.HTTP_201_CREATED
+)
 def create_experiment(
     *,
     db: Session = Depends(deps.get_db),
@@ -76,9 +81,7 @@ def update_experiment(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Experiment not found",
         )
-    experiment = service.update_experiment(
-        experiment=experiment, obj_in=experiment_in
-    )
+    experiment = service.update_experiment(experiment=experiment, obj_in=experiment_in)
     return experiment
 
 

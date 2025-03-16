@@ -7,22 +7,23 @@ A scalable, AWS-based platform for A/B testing and feature flags with real-time 
 This platform enables teams to make data-driven decisions through robust experimentation and feature management. Built on AWS, it offers high-throughput event collection, real-time experiment assignment, and comprehensive analytics.
 
 Key capabilities:
-- A/B testing, multivariate testing, and split URL testing
-- Feature flags with targeting and gradual rollouts
-- Real-time metric tracking and statistical analysis
-- User segmentation for targeted experiments
-- Role-based access control
+
+-   A/B testing, multivariate testing, and split URL testing
+-   Feature flags with targeting and gradual rollouts
+-   Real-time metric tracking and statistical analysis
+-   User segmentation for targeted experiments
+-   Role-based access control
 
 ## Architecture
 
 The platform is built using a modern, scalable architecture leveraging AWS services:
 
-- **Frontend**: Next.js React application for experiment management and analytics dashboards
-- **Backend**: FastAPI Python services running on ECS/Fargate
-- **Real-time Services**: AWS Lambda functions for low-latency operations
-- **Data Storage**: Aurora PostgreSQL, DynamoDB, ElastiCache Redis, S3
-- **Event Pipeline**: Kinesis, Lambda, OpenSearch for real-time analytics
-- **Infrastructure**: Defined with AWS CDK for infrastructure as code
+-   **Frontend**: Next.js React application for experiment management and analytics dashboards
+-   **Backend**: FastAPI Python services running on ECS/Fargate
+-   **Real-time Services**: AWS Lambda functions for low-latency operations
+-   **Data Storage**: Aurora PostgreSQL, DynamoDB, ElastiCache Redis, S3
+-   **Event Pipeline**: Kinesis, Lambda, OpenSearch for real-time analytics
+-   **Infrastructure**: Defined with AWS CDK for infrastructure as code
 
 ## Directory Structure
 
@@ -59,10 +60,10 @@ experimentation-platform/
 
 ### Prerequisites
 
-- AWS Account with appropriate permissions
-- Node.js 18+ and npm
-- Python 3.9+
-- Docker and Docker Compose
+-   AWS Account with appropriate permissions
+-   Node.js 18+ and npm
+-   Python 3.9+
+-   Docker and Docker Compose
 
 ### Local Development Setup
 
@@ -111,9 +112,10 @@ npm run dev
 ```
 
 The application will be available at:
-- Backend API: http://localhost:8000
-- Frontend: http://localhost:3000
-- API Documentation: http://localhost:8000/docs
+
+-   Backend API: http://localhost:8000
+-   Frontend: http://localhost:3000
+-   API Documentation: http://localhost:8000/docs
 
 ### Running Tests
 
@@ -204,26 +206,26 @@ Use our client SDKs to integrate the platform with your applications:
 **JavaScript**
 
 ```js
-import { ExperimentationClient } from '@your-org/experimentation-sdk';
+import { ExperimentationClient } from "@your-org/experimentation-sdk";
 
-const client = new ExperimentationClient('API_KEY');
+const client = new ExperimentationClient("API_KEY");
 
 // Check experiment variant
-const variant = await client.getVariant('experiment-key', userId);
-if (variant === 'treatment') {
-  // Show treatment experience
+const variant = await client.getVariant("experiment-key", userId);
+if (variant === "treatment") {
+    // Show treatment experience
 } else {
-  // Show control experience
+    // Show control experience
 }
 
 // Check feature flag
-const isEnabled = await client.isFeatureEnabled('feature-key', userId);
+const isEnabled = await client.isFeatureEnabled("feature-key", userId);
 if (isEnabled) {
-  // Enable feature
+    // Enable feature
 }
 
 // Track event
-client.trackEvent('purchase_completed', userId, { value: 99.99 });
+client.trackEvent("purchase_completed", userId, { value: 99.99 });
 ```
 
 **Python**
