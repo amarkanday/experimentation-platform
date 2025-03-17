@@ -13,78 +13,62 @@ from aws_cdk import (
     aws_glue as glue,
 )
 from constructs import Construct
+import random
+import string
 
 
 class AnalyticsStack(Stack):
     def __init__(self, scope: Construct, construct_id: str, vpc, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
-        # Generate a unique identifier to avoid resource name conflicts
-        # This will add a suffix to resource names
+        # Generate random ID for resource names
+        random_id = "".join(random.choices(string.ascii_lowercase + string.digits, k=8))
         env_name = self.node.try_get_context("env") or "dev"
-        unique_suffix = f"-{env_name}-{self.account}-{self.region}"
 
-        # Create or import a Kinesis Data Stream for event collection
-        try:
-            # Try to create a new stream with a unique name
-            self.events_stream = kinesis.Stream(
-                self,
-                "EventsStream",
-                stream_name=f"experimentation-events{unique_suffix}",
-                shard_count=1,  # Increase for production
-                retention_period=Duration.hours(24),
-            )
-        except Exception as e:
-            # If it fails, import the existing stream
-            print(f"Using existing Kinesis stream: {e}")
-            self.events_stream = kinesis.Stream.from_stream_arn(
-                self,
-                "ExistingEventsStream",
-                stream_arn=f"arn:aws:kinesis:{self.region}:{self.account}:stream/experimentation-events",
-            )
+        # Create a Kinesis Data Stream with randomized name
+        stream_name = f"exp-events-{random_id}"
+        self.events_stream = kinesis.Stream(
+            self,
+            "EventsStream",
+            stream_name=stream_name,
+            shard_count=1,  # Increase for production
+            retention_period=Duration.hours(24),
+        )
 
-        # Create or import an S3 bucket for the data lake
-        try:
-            # Try to create a new bucket with a unique name
-            bucket_name = f"experimentation-data-lake{unique_suffix}"
-            self.data_lake_bucket = s3.Bucket(
-                self,
-                "DataLakeBucket",
-                bucket_name=bucket_name,
-                removal_policy=RemovalPolicy.RETAIN,
-                versioned=True,
-            )
-        except Exception as e:
-            # If it fails, import the existing bucket
-            print(f"Using existing S3 bucket: {e}")
-            existing_bucket_name = (
-                f"experimentation-data-lake-{self.account}-{self.region}"
-            )
-            self.data_lake_bucket = s3.Bucket.from_bucket_name(
-                self, "ExistingDataLakeBucket", bucket_name=existing_bucket_name
-            )
+        # Create an S3 bucket with randomized name
+        bucket_name = f"exp-data-{random_id}-{self.region}"
+        self.data_lake_bucket = s3.Bucket(
+            self,
+            "DataLakeBucket",
+            bucket_name=bucket_name,
+            removal_policy=RemovalPolicy.RETAIN,
+            versioned=True,
+        )
 
-        # Create a Firehose delivery stream to S3
+        # Create a policy document with Kinesis permissions
+        kinesis_policy = iam.PolicyDocument(
+            statements=[
+                iam.PolicyStatement(
+                    actions=[
+                        "kinesis:DescribeStream",
+                        "kinesis:GetShardIterator",
+                        "kinesis:GetRecords",
+                        "kinesis:ListShards",
+                    ],
+                    resources=[self.events_stream.stream_arn],
+                )
+            ]
+        )
+
+        # Create Firehose role with inline policy
         firehose_role = iam.Role(
             self,
             "FirehoseRole",
             assumed_by=iam.ServicePrincipal("firehose.amazonaws.com"),
+            inline_policies={"KinesisPolicy": kinesis_policy},
         )
 
-        # Add explicit permissions for Kinesis
-        firehose_role.add_to_policy(
-            iam.PolicyStatement(
-                actions=[
-                    "kinesis:DescribeStream",
-                    "kinesis:GetShardIterator",
-                    "kinesis:GetRecords",
-                    "kinesis:ListShards",
-                ],
-                resources=[self.events_stream.stream_arn],
-            )
-        )
-
-        # Add S3 permissions
+        # Create inline policy for S3 access
         firehose_role.add_to_policy(
             iam.PolicyStatement(
                 actions=[
@@ -102,7 +86,7 @@ class AnalyticsStack(Stack):
             )
         )
 
-        # Add CloudWatch permissions for logging
+        # Create inline policy for CloudWatch Logs access
         firehose_role.add_to_policy(
             iam.PolicyStatement(
                 actions=[
@@ -115,8 +99,9 @@ class AnalyticsStack(Stack):
         )
 
         # Create a unique delivery stream name
-        delivery_stream_name = f"experimentation-events-to-s3{unique_suffix}"
+        delivery_stream_name = f"exp-delivery-{random_id}"
 
+        # Create the delivery stream
         delivery_stream = firehose.CfnDeliveryStream(
             self,
             "EventsDeliveryStream",
@@ -137,19 +122,10 @@ class AnalyticsStack(Stack):
                 role_arn=firehose_role.role_arn,
             ),
         )
+        delivery_stream.node.add_dependency(self.events_stream)
 
-        # Create a domain name with a unique suffix
-        # domain_name = f"experimentation{unique_suffix}".lower().replace("-", "")
-        # Update the domain name generation to ensure it's within the 3-28 char limit
-        domain_name = f"exp-{env_name}-{self.region.split('-')[2]}"
-        if len(domain_name) > 28:
-            # If still too long, use a simpler name with a hash
-            import hashlib
-
-            hash_suffix = hashlib.md5(
-                f"{self.account}-{self.region}".encode()
-            ).hexdigest()[:6]
-            domain_name = f"exp-{env_name}-{hash_suffix}"
+        # Create a domain name with randomized suffix (ensuring it's under 28 chars)
+        domain_name = f"exp-{random_id[:8]}"
 
         # Create an OpenSearch domain for analytics (with simplified configuration)
         opensearch_domain = opensearch.Domain(
@@ -167,7 +143,7 @@ class AnalyticsStack(Stack):
                 iam.PolicyStatement(
                     actions=["es:*"],
                     effect=iam.Effect.ALLOW,
-                    principals=[iam.AnyPrincipal()],
+                    principals=[iam.AccountRootPrincipal()],
                     resources=["*"],
                 )
             ],
@@ -175,6 +151,7 @@ class AnalyticsStack(Stack):
             node_to_node_encryption=True,
         )
 
+        # Rest of implementation unchanged...
         # Create a Lambda function to process events and send to OpenSearch
         lambda_role = iam.Role(
             self,
@@ -214,7 +191,7 @@ class AnalyticsStack(Stack):
             handler="index.handler",
             environment={
                 "OPENSEARCH_DOMAIN": opensearch_domain.domain_endpoint,
-                "ENVIRONMENT": "dev",
+                "ENVIRONMENT": env_name,
             },
             timeout=Duration.seconds(30),
             memory_size=256,
@@ -230,6 +207,9 @@ class AnalyticsStack(Stack):
                 max_batching_window=Duration.seconds(10),
             )
         )
+
+        # Create a Glue Database with randomized name
+        db_name = f"exp_{random_id[:8]}_db"
 
         # Create a Glue Database and Crawler for analyzing data in S3
         glue_role = iam.Role(
@@ -251,18 +231,19 @@ class AnalyticsStack(Stack):
             "ExperimentationDatabase",
             catalog_id=self.account,
             database_input=glue.CfnDatabase.DatabaseInputProperty(
-                name="experimentation_db",
-                description="Database for experimentation platform data",
+                name=db_name, description="Database for experimentation platform data"
             ),
         )
 
-        # Create a Glue Crawler
+        # Create a Glue Crawler with randomized name
+        crawler_name = f"exp-crawler-{random_id[:8]}"
+
         glue_crawler = glue.CfnCrawler(
             self,
             "EventsCrawler",
-            name="experimentation-events-crawler",
+            name=crawler_name,
             role=glue_role.role_arn,
-            database_name="experimentation_db",
+            database_name=db_name,
             schedule=glue.CfnCrawler.ScheduleProperty(
                 schedule_expression="cron(0 * * * ? *)"  # Run hourly
             ),
