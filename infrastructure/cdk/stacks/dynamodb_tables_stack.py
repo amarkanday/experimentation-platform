@@ -14,7 +14,7 @@ from constructs import Construct
 class DynamoDBTablesStack(Stack):
     """
     Stack that creates DynamoDB tables for the experimentation platform.
-    
+
     Tables created:
     - Assignments: Store user experiment variant assignments
     - Events: Store user interaction events for experiment analysis
@@ -36,21 +36,29 @@ class DynamoDBTablesStack(Stack):
             if environment in ["dev", "staging"]
             else dynamodb.BillingMode.PROVISIONED
         )
-        
+
         # Use different removal policies based on environment
         # DESTROY is ok for dev (save costs), but RETAIN for production (data safety)
         removal_policy = (
-            RemovalPolicy.DESTROY
-            if environment == "dev"
-            else RemovalPolicy.RETAIN
+            RemovalPolicy.DESTROY if environment == "dev" else RemovalPolicy.RETAIN
         )
 
         # Create tables
-        self.assignments_table = self._create_assignments_table(billing_mode, removal_policy, environment)
-        self.events_table = self._create_events_table(billing_mode, removal_policy, environment)
-        self.experiments_table = self._create_experiments_table(billing_mode, removal_policy, environment)
-        self.feature_flags_table = self._create_feature_flags_table(billing_mode, removal_policy, environment)
-        self.overrides_table = self._create_overrides_table(billing_mode, removal_policy, environment)
+        self.assignments_table = self._create_assignments_table(
+            billing_mode, removal_policy, environment
+        )
+        self.events_table = self._create_events_table(
+            billing_mode, removal_policy, environment
+        )
+        self.experiments_table = self._create_experiments_table(
+            billing_mode, removal_policy, environment
+        )
+        self.feature_flags_table = self._create_feature_flags_table(
+            billing_mode, removal_policy, environment
+        )
+        self.overrides_table = self._create_overrides_table(
+            billing_mode, removal_policy, environment
+        )
 
         # Store table names in SSM Parameter Store for reference by other services
         self._store_table_references(environment)
@@ -61,7 +69,7 @@ class DynamoDBTablesStack(Stack):
     def _create_assignments_table(self, billing_mode, removal_policy, environment):
         """
         Create the Assignments table to track which users are assigned to which experiments/variants.
-        
+
         Access patterns:
         - Get assignment by ID
         - Get assignments for a specific user
@@ -137,13 +145,13 @@ class DynamoDBTablesStack(Stack):
         # Add tags
         Tags.of(table).add("Service", "experimentation-platform")
         Tags.of(table).add("Environment", environment)
-        
+
         return table
 
     def _create_events_table(self, billing_mode, removal_policy, environment):
         """
         Create the Events table to track user interaction events for experiment analysis.
-        
+
         Access patterns:
         - Get event by ID and timestamp
         - Get events for a specific user
@@ -213,13 +221,13 @@ class DynamoDBTablesStack(Stack):
         # Add tags
         Tags.of(table).add("Service", "experimentation-platform")
         Tags.of(table).add("Environment", environment)
-        
+
         return table
 
     def _create_experiments_table(self, billing_mode, removal_policy, environment):
         """
         Create the Experiments table to store experiment configurations and metadata.
-        
+
         Access patterns:
         - Get experiment by ID
         - Get experiments by status (active, completed, etc.)
@@ -282,13 +290,13 @@ class DynamoDBTablesStack(Stack):
         # Add tags
         Tags.of(table).add("Service", "experimentation-platform")
         Tags.of(table).add("Environment", environment)
-        
+
         return table
 
     def _create_feature_flags_table(self, billing_mode, removal_policy, environment):
         """
         Create the FeatureFlags table to store feature flag configurations.
-        
+
         Access patterns:
         - Get feature flag by ID
         - Get feature flags by status (active, inactive)
@@ -337,13 +345,13 @@ class DynamoDBTablesStack(Stack):
         # Add tags
         Tags.of(table).add("Service", "experimentation-platform")
         Tags.of(table).add("Environment", environment)
-        
+
         return table
 
     def _create_overrides_table(self, billing_mode, removal_policy, environment):
         """
         Create the Overrides table to store user-specific experiment or feature overrides.
-        
+
         Access patterns:
         - Get override by ID
         - Get all overrides for a specific user
@@ -406,7 +414,7 @@ class DynamoDBTablesStack(Stack):
         # Add tags
         Tags.of(table).add("Service", "experimentation-platform")
         Tags.of(table).add("Environment", environment)
-        
+
         return table
 
     def _configure_auto_scaling(self, table, min_capacity=5, max_capacity=100):
@@ -416,7 +424,7 @@ class DynamoDBTablesStack(Stack):
             min_capacity=min_capacity,
             max_capacity=max_capacity,
         )
-        
+
         # Scale up when 70% of provisioned capacity is used
         read_scaling.scale_on_utilization(
             target_utilization_percent=70,
@@ -429,7 +437,7 @@ class DynamoDBTablesStack(Stack):
             min_capacity=min_capacity,
             max_capacity=max_capacity,
         )
-        
+
         # Scale up when 70% of provisioned capacity is used
         write_scaling.scale_on_utilization(
             target_utilization_percent=70,
