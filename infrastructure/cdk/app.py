@@ -9,7 +9,8 @@ from stacks.api_stack import ApiStack
 from stacks.analytics_stack import AnalyticsStack
 from stacks.monitoring_stack import MonitoringStack
 from stacks.enhanced_database_stack import EnhancedDatabaseStack
-from stacks.dynamodb_tables_stack import DynamoDBTablesStack  # Import the DynamoDB tables stack
+from stacks.dynamodb_tables_stack import DynamoDBTablesStack
+from stacks.elasticache_redis_stack import ElastiCacheRedisStack  # Import the Redis stack
 
 
 # Environment determination
@@ -43,13 +44,24 @@ database_stack = EnhancedDatabaseStack(
 )
 database_stack.add_dependency(vpc_stack)
 
+# Create the ElastiCache Redis stack
+redis_stack = ElastiCacheRedisStack(
+    app,
+    f"experimentation-redis-{env_name}",
+    vpc=vpc_stack.vpc,
+    environment=env_name,
+    env=env,
+)
+redis_stack.add_dependency(vpc_stack)
+
 # Create the compute stack (ECS, Lambda)
 compute_stack = ComputeStack(
     app, f"experimentation-compute-{env_name}", vpc=vpc_stack.vpc, env=env
 )
 compute_stack.add_dependency(vpc_stack)
 compute_stack.add_dependency(database_stack)
-compute_stack.add_dependency(dynamodb_stack)  # Add dependency on DynamoDB tables
+compute_stack.add_dependency(dynamodb_stack)
+compute_stack.add_dependency(redis_stack)  # Add dependency on Redis stack
 
 # Create the API Gateway stack
 api_stack = ApiStack(
@@ -66,7 +78,7 @@ analytics_stack = AnalyticsStack(
     app, f"experimentation-analytics-{env_name}", vpc=vpc_stack.vpc, env=env
 )
 analytics_stack.add_dependency(vpc_stack)
-analytics_stack.add_dependency(dynamodb_stack)  # Add dependency on DynamoDB tables for analytics
+analytics_stack.add_dependency(dynamodb_stack)
 
 # Create the monitoring stack (CloudWatch, Alarms)
 monitoring_stack = MonitoringStack(
