@@ -2,8 +2,8 @@
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Union
 
-from app.models.experiment import Experiment, Metric, Variant
-from app.schemas.experiment import ExperimentCreate, ExperimentUpdate
+from backend.app.models.experiment import Experiment, Metric, Variant
+from backend.app.schemas.experiment import ExperimentCreate, ExperimentUpdate
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
 

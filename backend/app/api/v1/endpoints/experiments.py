@@ -1,16 +1,16 @@
 # Experiment management endpoints
-from typing import (Any, List) # noqa: F401
+from typing import Any, List # noqa: F401
 
-from app.api import deps # noqa: F401
-from app.models.experiment import Experiment # noqa: F401
-from app.schemas.experiment import (
+from backend.app.api import deps # noqa: F401
+from backend.app.models.experiment import Experiment # noqa: F401
+from backend.app.schemas.experiment import (
     ExperimentCreate,
     ExperimentResponse,
     ExperimentUpdate,
-) 
-from app.services.experiment_service import ExperimentService #noqa: F401
-from fastapi import APIRouter, Depends, HTTPException, status #noqa: F401
-from sqlalchemy.orm import Session # noqa: F401
+)
+from backend.app.services.experiment_service import ExperimentService # noqa: F401
+from fastapi import APIRouter, Depends, HTTPException, status # noqa: F401
+from sqlalchemy.orm import Session  # noqa: F401
 
 router = APIRouter()
 

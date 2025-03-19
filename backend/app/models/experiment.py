@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from typing import List
 
-from app.models.base import Base
+from backend.app.models.base import Base
 from sqlalchemy import (
     Boolean,
     Column,
