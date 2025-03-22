@@ -4,6 +4,9 @@ from pydantic_settings import BaseSettings
 from pydantic_core.core_schema import ValidationInfo
 from pydantic import ConfigDict
 import os
+from dotenv import load_dotenv
+
+load_dotenv()  # This loads the variables from .env
 
 
 class Settings(BaseSettings):
@@ -24,7 +27,9 @@ class Settings(BaseSettings):
     # Database
     POSTGRES_SERVER: str = "localhost"
     POSTGRES_USER: str = "user"
-    POSTGRES_PASSWORD: SecretStr = SecretStr("password")  # Use SecretStr for sensitive data
+    POSTGRES_PASSWORD: SecretStr = SecretStr(
+        "password"
+    )  # Use SecretStr for sensitive data
     POSTGRES_DB: str = "database"
     DATABASE_URI: Optional[str] = None
 
@@ -35,7 +40,7 @@ class Settings(BaseSettings):
         values = info.data
         return (
             f"postgresql://{values.get('POSTGRES_USER')}:"
-            f"{values.get('POSTGRES_PASSWORD').get_secret_value() if isinstance(values.get('POSTGRES_PASSWORD'), SecretStr) else values.get('POSTGRES_PASSWORD')}"
+            f"{values.get('POSTGRES_PASSWORD').get_secret_value() if isinstance(values.get('POSTGRES_PASSWORD'), SecretStr) else (values.get('POSTGRES_PASSWORD') or '')}"
             f"@{values.get('POSTGRES_SERVER')}/{values.get('POSTGRES_DB')}"
         )
 
@@ -51,11 +56,13 @@ class Settings(BaseSettings):
 
     # AWS
     AWS_REGION: str = "us-west-2"
-    COGNITO_USER_POOL_ID: Optional[str] = None
-    COGNITO_CLIENT_ID: Optional[str] = None
+    COGNITO_USER_POOL_ID: str = os.getenv("COGNITO_USER_POOL_ID", "")
+    COGNITO_CLIENT_ID: str = os.getenv("COGNITO_CLIENT_ID", "")
 
     # Security
-    SECRET_KEY: SecretStr = SecretStr("defaultsecret")  # Use SecretStr for sensitive data
+    SECRET_KEY: SecretStr = SecretStr(
+        "defaultsecret"
+    )  # Use SecretStr for sensitive data
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8  # 8 days
 
     # Logging
@@ -75,7 +82,7 @@ class Settings(BaseSettings):
         "env_file_encoding": "utf-8",
         "env_prefix": "",
         "env_nested_delimiter": "__",
-        "secrets_dir": None
+        "secrets_dir": None,
     }
 
 

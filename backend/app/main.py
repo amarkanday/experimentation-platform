@@ -4,6 +4,7 @@ from backend.app.api.v1.router import api_router
 from backend.app.core.config import settings
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from backend.app.routers import auth  # Import the auth router
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -24,6 +25,11 @@ app.add_middleware(
 
 # Include API router
 app.include_router(api_router, prefix=settings.API_V1_STR)
+
+# Include authentication router
+app.include_router(
+    auth.router, prefix=f"{settings.API_V1_STR}/auth", tags=["Authentication"]
+)
 
 
 @app.get("/health")
