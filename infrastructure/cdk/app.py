@@ -10,8 +10,10 @@ from stacks.analytics_stack import AnalyticsStack
 from stacks.monitoring_stack import MonitoringStack
 from stacks.enhanced_database_stack import EnhancedDatabaseStack
 from stacks.dynamodb_tables_stack import DynamoDBTablesStack
-from stacks.elasticache_redis_stack import ElastiCacheRedisStack  # Import the Redis stack
-
+from stacks.elasticache_redis_stack import (
+    ElastiCacheRedisStack,
+)  # Import the Redis stack
+from stacks.authentication_stack import AuthenticationStack
 
 # Environment determination
 env_name = os.environ.get("ENVIRONMENT", "dev")
@@ -23,15 +25,17 @@ env = Environment(account=account, region=region)
 
 app = App()
 
+# Create the authentication stack
+auth_stack = AuthenticationStack(
+    app, f"experimentation-auth-{env_name}", environment=env_name, env=env
+)
+
 # Create the networking stack (VPC, subnets, etc.)
 vpc_stack = VpcStack(app, f"experimentation-vpc-{env_name}", env=env)
 
 # Create the DynamoDB tables stack
 dynamodb_stack = DynamoDBTablesStack(
-    app,
-    f"experimentation-dynamodb-{env_name}",
-    environment=env_name,
-    env=env
+    app, f"experimentation-dynamodb-{env_name}", environment=env_name, env=env
 )
 
 # Create the enhanced database stack (with improved Aurora PostgreSQL)
@@ -85,5 +89,6 @@ monitoring_stack = MonitoringStack(
     app, f"experimentation-monitoring-{env_name}", vpc=vpc_stack.vpc, env=env
 )
 monitoring_stack.add_dependency(vpc_stack)
+
 
 app.synth()

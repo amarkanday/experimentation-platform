@@ -88,7 +88,7 @@ class EnhancedDatabaseStack(Stack):
                 # Performance tuning
                 "shared_buffers": self._get_shared_buffers_for_env(environment),
                 "work_mem": self._get_work_mem_for_env(environment),
-                "maintenance_work_mem": "64MB",
+                "maintenance_work_mem": "65536",
                 "effective_cache_size": self._get_effective_cache_for_env(environment),
                 "random_page_cost": "1.1",  # Optimized for SSD storage
                 # Logging settings
@@ -99,9 +99,9 @@ class EnhancedDatabaseStack(Stack):
                 "log_lock_waits": "1",
                 "log_temp_files": "0",
                 # Query optimization
-                "autovacuum": "1",
-                "autovacuum_vacuum_scale_factor": "0.1",
-                "autovacuum_analyze_scale_factor": "0.05",
+                # "autovacuum": "1",
+                # "autovacuum_vacuum_scale_factor": "0.1",
+                # "autovacuum_analyze_scale_factor": "0.05",# Not supported in this ver
             },
         )
 
@@ -248,28 +248,26 @@ class EnhancedDatabaseStack(Stack):
 
     # HELPER METHODS
     def _get_shared_buffers_for_env(self, environment):
-        """Return appropriate shared_buffers setting based on environment"""
         if environment == "prod":
-            return "4GB"  # For larger instances in production
+            return "4194304"  # 4GB in KB
         elif environment == "staging":
-            return "2GB"  # For medium instances in staging
+            return "2097152"  # 2GB in KB
         else:
-            return "256MB"  # For smaller instances in dev
+            return "262144"  # 256MB in KB
 
     def _get_work_mem_for_env(self, environment):
-        """Return appropriate work_mem setting based on environment"""
         if environment == "prod":
-            return "16MB"
+            return "16384"  # 16MB in KB
         elif environment == "staging":
-            return "8MB"
+            return "8192"  # 8MB in KB
         else:
-            return "4MB"
+            return "4096"  # 4MB in KB
 
     def _get_effective_cache_for_env(self, environment):
         """Return appropriate effective_cache_size setting based on environment"""
         if environment == "prod":
-            return "12GB"
+            return "12582912"
         elif environment == "staging":
-            return "6GB"
+            return "6291456"
         else:
-            return "768MB"
+            return "786432"
