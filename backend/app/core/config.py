@@ -1,90 +1,75 @@
-from typing import List, Optional, Union, Any
-from pydantic import AnyHttpUrl, field_validator, SecretStr
-from pydantic_settings import BaseSettings
-from pydantic_core.core_schema import ValidationInfo
-from pydantic import ConfigDict
+# core/config.py
 import os
-from dotenv import load_dotenv
-
-load_dotenv()  # This loads the variables from .env
+import secrets
+from typing import Any, Dict, Optional
+from pydantic_settings import BaseSettings  # Correct import for BaseSettings
+from pydantic import PostgresDsn, field_validator, ValidationInfo
 
 
 class Settings(BaseSettings):
-    API_V1_STR: str = "/api/v1"
+    """Application settings using Pydantic for validation."""
+
     PROJECT_NAME: str = "Experimentation Platform"
+    API_V1_STR: str = "/api/v1"
+    SECRET_KEY: str = secrets.token_urlsafe(32)
+    CORS_ORIGINS: list[str] = [
+        "*"
+    ]  # Define allowed origins (e.g., ["http://localhost", "https://example.com"])
+    # 60 minutes * 24 hours * 8 days = 8 days
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8
 
-    # CORS
-    CORS_ORIGINS: List[AnyHttpUrl] = []
+    # Database settings
+    POSTGRES_SERVER: str
+    POSTGRES_USER: str
+    POSTGRES_PASSWORD: str
+    POSTGRES_DB: str
+    POSTGRES_PORT: str = "5432"
+    DATABASE_SCHEMA: str = "experimentation"
 
-    @field_validator("CORS_ORIGINS", mode="before")
-    def assemble_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:
-        if isinstance(v, str) and not v.startswith("["):
-            return [i.strip() for i in v.split(",")]
-        elif isinstance(v, list):
-            return v
-        raise ValueError(f"Invalid CORS_ORIGINS format: {v}")
+    # AWS/Cognito settings
+    COGNITO_USER_POOL_ID: Optional[str] = None
+    COGNITO_CLIENT_ID: Optional[str] = None
+    AWS_REGION: Optional[str] = None
 
-    # Database
-    POSTGRES_SERVER: str = "localhost"
-    POSTGRES_USER: str = "user"
-    POSTGRES_PASSWORD: SecretStr = SecretStr(
-        "password"
-    )  # Use SecretStr for sensitive data
-    POSTGRES_DB: str = "database"
-    DATABASE_URI: Optional[str] = None
+    # Database connection configuration
+    DATABASE_URI: Optional[PostgresDsn] = None
+    DB_ECHO_LOG: bool = False
+    DB_POOL_SIZE: int = 5
+    DB_MAX_OVERFLOW: int = 10
 
     @field_validator("DATABASE_URI", mode="before")
-    def assemble_db_connection(cls, v: Optional[str], info: ValidationInfo) -> str:
+    def assemble_db_connection(cls, v: Optional[str], info: ValidationInfo) -> Any:
+        values = info.data
         if isinstance(v, str):
             return v
-        values = info.data
-        return (
-            f"postgresql://{values.get('POSTGRES_USER')}:"
-            f"{values.get('POSTGRES_PASSWORD').get_secret_value() if isinstance(values.get('POSTGRES_PASSWORD'), SecretStr) else (values.get('POSTGRES_PASSWORD') or '')}"
-            f"@{values.get('POSTGRES_SERVER')}/{values.get('POSTGRES_DB')}"
+
+        port = values.get("POSTGRES_PORT")
+        if port and isinstance(port, str):
+            port = int(port)
+
+        return PostgresDsn.build(
+            scheme="postgresql",
+            username=values.get("POSTGRES_USER"),
+            password=values.get("POSTGRES_PASSWORD"),
+            host=values.get("POSTGRES_SERVER"),
+            port=port,
+            path=f"/{values.get('POSTGRES_DB') or ''}",
         )
 
-    # Redis
-    REDIS_HOST: str = "localhost"
-    REDIS_PORT: int = 6379
-
-    @field_validator("REDIS_PORT")
-    def validate_redis_port(cls, v: int) -> int:
-        if not 1 <= v <= 65535:
-            raise ValueError("Redis port must be between 1 and 65535")
-        return v
-
-    # AWS
-    AWS_REGION: str = "us-west-2"
-    COGNITO_USER_POOL_ID: str = os.getenv("COGNITO_USER_POOL_ID", "")
-    COGNITO_CLIENT_ID: str = os.getenv("COGNITO_CLIENT_ID", "")
-
-    # Security
-    SECRET_KEY: SecretStr = SecretStr(
-        "defaultsecret"
-    )  # Use SecretStr for sensitive data
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8  # 8 days
-
-    # Logging
-    LOG_LEVEL: str = "INFO"
-
-    @field_validator("LOG_LEVEL")
-    def validate_log_level(cls, v: str) -> str:
-        valid_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
-        if v.upper() not in valid_levels:
-            raise ValueError(f"Log level must be one of {valid_levels}")
-        return v.upper()
-
-    model_config = {
-        "extra": "allow",
-        "case_sensitive": True,
-        "env_file": ".env",
-        "env_file_encoding": "utf-8",
-        "env_prefix": "",
-        "env_nested_delimiter": "__",
-        "secrets_dir": None,
-    }
+    class Config:
+        case_sensitive = True
+        env_file = ".env"
+        # Allow extra fields to prevent validation errors
+        extra = "allow"
 
 
-# Create settings instance using environment variables
-settings = Settings()
+# Create a settings instance
+settings = Settings(
+    POSTGRES_SERVER=os.getenv("POSTGRES_SERVER", "localhost"),
+    POSTGRES_USER=os.getenv("POSTGRES_USER", "postgres"),
+    POSTGRES_PASSWORD=os.getenv("POSTGRES_PASSWORD", "postgres"),
+    POSTGRES_DB=os.getenv("POSTGRES_DB", "experimentation"),
+    COGNITO_USER_POOL_ID=os.getenv("COGNITO_USER_POOL_ID"),
+    COGNITO_CLIENT_ID=os.getenv("COGNITO_CLIENT_ID"),
+    AWS_REGION=os.getenv("AWS_REGION"),
+)
