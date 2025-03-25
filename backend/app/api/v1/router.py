@@ -1,4 +1,10 @@
-from backend.app.api.v1.endpoints import assignments, events, experiments, feature_flags, users
+from backend.app.api.v1.endpoints import (
+    assignments,
+    events,
+    experiments,
+    feature_flags,
+    users,
+)
 from fastapi import APIRouter
 
 api_router = APIRouter()
