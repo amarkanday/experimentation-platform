@@ -103,8 +103,12 @@ class ExperimentService:
                 f"Cannot start experiment with status: {experiment.status}"
             )
 
-        experiment.status = "ACTIVE"
-        experiment.start_date = datetime.utcnow()
+        experiment.status = (
+            "ACTIVE"  # Ensure this is a valid assignment for the ORM object
+        )
+        from datetime import timezone
+
+        experiment.start_date = datetime.now(timezone.utc)
 
         self.db.commit()
         self.db.refresh(experiment)

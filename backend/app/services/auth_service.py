@@ -6,43 +6,51 @@ from typing import Dict, Any, Optional
 # Configure logging
 logger = logging.getLogger(__name__)
 
+
 class CognitoAuthService:
     """Service for AWS Cognito authentication operations."""
 
     def __init__(self):
         # Load configuration from environment variables
-        self.user_pool_id = os.environ.get('COGNITO_USER_POOL_ID')
-        self.client_id = os.environ.get('COGNITO_CLIENT_ID')
+        self.user_pool_id = os.environ.get("COGNITO_USER_POOL_ID")
+        self.client_id = os.environ.get("COGNITO_CLIENT_ID")
 
         if not self.user_pool_id or not self.client_id:
             logger.warning("COGNITO_USER_POOL_ID or COGNITO_CLIENT_ID not set")
 
         # Initialize Cognito Identity Provider client
-        self.client = boto3.client('cognito-idp')
+        self.client = boto3.client("cognito-idp")
 
-    def sign_up(self, username: str, password: str, email: str, given_name: str,
-                family_name: str) -> Dict[str, Any]:
+    def sign_up(
+        self,
+        username: str,
+        password: str,
+        email: str,
+        given_name: str,
+        family_name: str,
+    ) -> Dict[str, Any]:
         """Register a new user in the Cognito User Pool."""
         try:
             # Format user attributes for Cognito
             user_attributes = [
-                {'Name': 'email', 'Value': email},
-                {'Name': 'given_name', 'Value': given_name},
-                {'Name': 'family_name', 'Value': family_name},
+                {"Name": "email", "Value": email},
+                {"Name": "given_name", "Value": given_name},
+                {"Name": "family_name", "Value": family_name},
             ]
 
             response = self.client.sign_up(
                 ClientId=self.client_id,
                 Username=username,
                 Password=password,
-                UserAttributes=user_attributes
+                UserAttributes=user_attributes,
             )
 
             logger.info(f"User registered successfully: {username}")
             return {
-                "user_id": response['UserSub'],
+                "user_id": response["UserSub"],
                 "confirmed": False,
-                "message": "User registration successful. Please check your email for verification code."
+                "message": "User registration successful. Please check "
+                "your email for verification code.",
             }
 
         except Exception as e:
@@ -55,13 +63,13 @@ class CognitoAuthService:
             self.client.confirm_sign_up(
                 ClientId=self.client_id,
                 Username=username,
-                ConfirmationCode=confirmation_code
+                ConfirmationCode=confirmation_code,
             )
 
             logger.info(f"User confirmed successfully: {username}")
             return {
                 "message": "Account confirmed successfully. You can now sign in.",
-                "confirmed": True
+                "confirmed": True,
             }
 
         except Exception as e:
@@ -73,23 +81,23 @@ class CognitoAuthService:
         try:
             response = self.client.initiate_auth(
                 ClientId=self.client_id,
-                AuthFlow='USER_PASSWORD_AUTH',
+                AuthFlow="USER_PASSWORD_AUTH",
                 AuthParameters={
-                    'USERNAME': username,
-                    'PASSWORD': password,
-                }
+                    "USERNAME": username,
+                    "PASSWORD": password,
+                },
             )
 
-            auth_result = response.get('AuthenticationResult', {})
+            auth_result = response.get("AuthenticationResult", {})
 
             logger.info(f"Sign-in successful for user: {username}")
 
             return {
-                "access_token": auth_result.get('AccessToken'),
-                "id_token": auth_result.get('IdToken'),
-                "refresh_token": auth_result.get('RefreshToken'),
-                "expires_in": auth_result.get('ExpiresIn', 3600),
-                "token_type": auth_result.get('TokenType', 'Bearer'),
+                "access_token": auth_result.get("AccessToken"),
+                "id_token": auth_result.get("IdToken"),
+                "refresh_token": auth_result.get("RefreshToken"),
+                "expires_in": auth_result.get("ExpiresIn", 3600),
+                "token_type": auth_result.get("TokenType", "Bearer"),
             }
 
         except Exception as e:
@@ -99,29 +107,25 @@ class CognitoAuthService:
     def forgot_password(self, username: str) -> Dict[str, Any]:
         """Initiate the forgot password flow."""
         try:
-            self.client.forgot_password(
-                ClientId=self.client_id,
-                Username=username
-            )
+            self.client.forgot_password(ClientId=self.client_id, Username=username)
 
             logger.info(f"Forgot password flow initiated for user: {username}")
-            return {
-                "message": "Password reset code has been sent to your email."
-            }
+            return {"message": "Password reset code has been sent to your email."}
 
         except Exception as e:
             logger.error(f"Forgot password error: {str(e)}")
             raise ValueError(str(e))
 
-    def confirm_forgot_password(self, username: str, confirmation_code: str,
-                                new_password: str) -> Dict[str, Any]:
+    def confirm_forgot_password(
+        self, username: str, confirmation_code: str, new_password: str
+    ) -> Dict[str, Any]:
         """Complete the forgot password flow by setting a new password."""
         try:
             self.client.confirm_forgot_password(
                 ClientId=self.client_id,
                 Username=username,
                 ConfirmationCode=confirmation_code,
-                Password=new_password
+                Password=new_password,
             )
 
             logger.info(f"Password reset successful for user: {username}")
