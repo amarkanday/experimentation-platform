@@ -3,6 +3,14 @@ import os
 import logging
 from typing import Dict, Any, Optional
 
+"""
+AWS Cognito authentication service.
+
+This module provides a service for handling authentication operations using AWS Cognito.
+"""
+
+from botocore.exceptions import ClientError
+
 # Configure logging
 logger = logging.getLogger(__name__)
 
@@ -53,9 +61,12 @@ class CognitoAuthService:
                 "your email for verification code.",
             }
 
-        except Exception as e:
+        except ClientError as e:
             logger.error(f"Sign-up error: {str(e)}")
             raise ValueError(str(e))
+        except Exception as e:
+            logger.error(f"Unexpected error during sign-up: {str(e)}")
+            raise ValueError("An unexpected error occurred during registration")
 
     def confirm_sign_up(self, username: str, confirmation_code: str) -> Dict[str, Any]:
         """Confirm user registration with the code sent to their email."""
@@ -72,9 +83,12 @@ class CognitoAuthService:
                 "confirmed": True,
             }
 
-        except Exception as e:
+        except ClientError as e:
             logger.error(f"Confirmation error: {str(e)}")
             raise ValueError(str(e))
+        except Exception as e:
+            logger.error(f"Unexpected error during confirmation: {str(e)}")
+            raise ValueError("An unexpected error occurred during account confirmation")
 
     def sign_in(self, username: str, password: str) -> Dict[str, Any]:
         """Authenticate a user and get tokens."""
@@ -100,9 +114,12 @@ class CognitoAuthService:
                 "token_type": auth_result.get("TokenType", "Bearer"),
             }
 
-        except Exception as e:
+        except ClientError as e:
             logger.error(f"Sign-in error: {str(e)}")
             raise ValueError(str(e))
+        except Exception as e:
+            logger.error(f"Unexpected error during sign-in: {str(e)}")
+            raise ValueError("An unexpected error occurred during sign-in")
 
     def forgot_password(self, username: str) -> Dict[str, Any]:
         """Initiate the forgot password flow."""
@@ -112,9 +129,12 @@ class CognitoAuthService:
             logger.info(f"Forgot password flow initiated for user: {username}")
             return {"message": "Password reset code has been sent to your email."}
 
-        except Exception as e:
+        except ClientError as e:
             logger.error(f"Forgot password error: {str(e)}")
             raise ValueError(str(e))
+        except Exception as e:
+            logger.error(f"Unexpected error during forgot password: {str(e)}")
+            raise ValueError("An unexpected error occurred during password reset request")
 
     def confirm_forgot_password(
         self, username: str, confirmation_code: str, new_password: str
@@ -133,6 +153,65 @@ class CognitoAuthService:
                 "message": "Password has been reset successfully. You can now sign in."
             }
 
-        except Exception as e:
+        except ClientError as e:
             logger.error(f"Confirm forgot password error: {str(e)}")
             raise ValueError(str(e))
+        except Exception as e:
+            logger.error(f"Unexpected error during password reset: {str(e)}")
+            raise ValueError("An unexpected error occurred during password reset")
+
+    def refresh_token(self, refresh_token: str) -> Dict[str, Any]:
+        """Refresh the authentication tokens using a refresh token."""
+        try:
+            response = self.client.initiate_auth(
+                ClientId=self.client_id,
+                AuthFlow="REFRESH_TOKEN_AUTH",
+                AuthParameters={
+                    "REFRESH_TOKEN": refresh_token,
+                },
+            )
+
+            auth_result = response.get("AuthenticationResult", {})
+
+            logger.info("Token refreshed successfully")
+
+            return {
+                "access_token": auth_result.get("AccessToken"),
+                "id_token": auth_result.get("IdToken"),
+                "expires_in": auth_result.get("ExpiresIn", 3600),
+                "token_type": auth_result.get("TokenType", "Bearer"),
+            }
+
+        except ClientError as e:
+            logger.error(f"Token refresh error: {str(e)}")
+            raise ValueError(str(e))
+        except Exception as e:
+            logger.error(f"Unexpected error during token refresh: {str(e)}")
+            raise ValueError("An unexpected error occurred during token refresh")
+
+    def get_user(self, access_token: str) -> Dict[str, Any]:
+        """Get user details from the access token."""
+        try:
+            response = self.client.get_user(
+                AccessToken=access_token
+            )
+
+            # Extract user attributes
+            user_attributes = {
+                attr["Name"]: attr["Value"]
+                for attr in response.get("UserAttributes", [])
+            }
+
+            logger.info(f"User details retrieved for username: {response.get('Username')}")
+
+            return {
+                "username": response.get("Username"),
+                "attributes": user_attributes
+            }
+
+        except ClientError as e:
+            logger.error(f"Get user error: {str(e)}")
+            raise ValueError(str(e))
+        except Exception as e:
+            logger.error(f"Unexpected error getting user details: {str(e)}")
+            raise ValueError("An unexpected error occurred retrieving user details")
