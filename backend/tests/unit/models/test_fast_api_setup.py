@@ -29,7 +29,7 @@ def test_health_endpoint(client):
 
 def test_api_docs_available(client):
     """Test that the API docs are available."""
-    response = client.get("/docs")
+    response = client.get("/api/v1/docs")
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
 

@@ -25,13 +25,15 @@ class Settings(BaseSettings):
     # CORS settings
     BACKEND_CORS_ORIGINS: List[AnyHttpUrl] = []
 
-    @validator("BACKEND_CORS_ORIGINS", pre=True)
+    @validator("BACKEND_CORS_ORIGINS", pre=True, allow_reuse=True)
     def assemble_cors_origins(cls, v: Union[str, List[str]]) -> Union[List[str], str]:
         if isinstance(v, str) and not v.startswith("["):
             return [i.strip() for i in v.split(",")]
         elif isinstance(v, (list, str)):
             return v
         raise ValueError(v)
+
+    # function implementation...
 
     # Database settings
     POSTGRES_SERVER: str = "localhost"
@@ -42,8 +44,10 @@ class Settings(BaseSettings):
     POSTGRES_SCHEMA: str = "experimentation"
     SQLALCHEMY_DATABASE_URI: Optional[PostgresDsn] = None
     DATABASE_URI: Optional[PostgresDsn] = None  # Alias for backward compatibility
+    # Add to backend/app/core/config.py
+    SERVER_URL: str = "http://localhost:8000"
 
-    @validator("SQLALCHEMY_DATABASE_URI", pre=True)
+    @validator("SQLALCHEMY_DATABASE_URI", pre=True, allow_reuse=True)
     def assemble_db_connection(cls, v: Optional[str], values: Dict[str, Any]) -> Any:
         """Build database URI from components."""
         if isinstance(v, str):
@@ -85,7 +89,7 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
 
     # AWS settings - optional
-    AWS_REGION: str = "us-east-1"
+    AWS_REGION: str = "us-west-2"
     AWS_ACCESS_KEY_ID: Optional[str] = None
     AWS_SECRET_ACCESS_KEY: Optional[str] = None
 

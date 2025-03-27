@@ -65,7 +65,13 @@ class User(Base, BaseModel):
     last_login = Column(DateTime)
     preferences = Column(JSONB, default={})
 
+    # We'll add the relationship later after implementing the API key model
+    # to avoid circular imports
+
     __table_args__ = ({"schema": "experimentation"},)
+
+    def __repr__(self):
+        return f"<User {self.username}>"
 
 
 class Role(Base, BaseModel):
@@ -77,6 +83,9 @@ class Role(Base, BaseModel):
     description = Column(String(255))
 
     __table_args__ = ({"schema": "experimentation"},)
+
+    def __repr__(self):
+        return f"<Role {self.name}>"
 
 
 class Permission(Base, BaseModel):
@@ -94,3 +103,6 @@ class Permission(Base, BaseModel):
     )  # e.g., 'create', 'read', 'update', 'delete'
 
     __table_args__ = ({"schema": "experimentation"},)
+
+    def __repr__(self):
+        return f"<Permission {self.name}>"

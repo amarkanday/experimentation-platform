@@ -5,6 +5,7 @@ This module defines Pydantic models for experiment-related data structures.
 These models are used for request/response validation and documentation.
 """
 
+from backend.app.schemas.experiment_schemas import ExperimentResponse
 import uuid
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Union

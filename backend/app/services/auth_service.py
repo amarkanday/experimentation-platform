@@ -66,7 +66,8 @@ class CognitoAuthService:
             raise ValueError(str(e))
         except Exception as e:
             logger.error(f"Unexpected error during sign-up: {str(e)}")
-            raise ValueError("An unexpected error occurred during registration")
+            # Pass through the original error message
+            raise ValueError(str(e))
 
     def confirm_sign_up(self, username: str, confirmation_code: str) -> Dict[str, Any]:
         """Confirm user registration with the code sent to their email."""
@@ -88,7 +89,8 @@ class CognitoAuthService:
             raise ValueError(str(e))
         except Exception as e:
             logger.error(f"Unexpected error during confirmation: {str(e)}")
-            raise ValueError("An unexpected error occurred during account confirmation")
+            # Pass through the original error message
+            raise ValueError(str(e))
 
     def sign_in(self, username: str, password: str) -> Dict[str, Any]:
         """Authenticate a user and get tokens."""
@@ -119,7 +121,8 @@ class CognitoAuthService:
             raise ValueError(str(e))
         except Exception as e:
             logger.error(f"Unexpected error during sign-in: {str(e)}")
-            raise ValueError("An unexpected error occurred during sign-in")
+            # Pass through the original error message
+            raise ValueError(str(e))
 
     def forgot_password(self, username: str) -> Dict[str, Any]:
         """Initiate the forgot password flow."""
@@ -134,7 +137,8 @@ class CognitoAuthService:
             raise ValueError(str(e))
         except Exception as e:
             logger.error(f"Unexpected error during forgot password: {str(e)}")
-            raise ValueError("An unexpected error occurred during password reset request")
+            # Pass through the original error message
+            raise ValueError(str(e))
 
     def confirm_forgot_password(
         self, username: str, confirmation_code: str, new_password: str
@@ -158,7 +162,8 @@ class CognitoAuthService:
             raise ValueError(str(e))
         except Exception as e:
             logger.error(f"Unexpected error during password reset: {str(e)}")
-            raise ValueError("An unexpected error occurred during password reset")
+            # Pass through the original error message
+            raise ValueError(str(e))
 
     def refresh_token(self, refresh_token: str) -> Dict[str, Any]:
         """Refresh the authentication tokens using a refresh token."""
@@ -192,9 +197,7 @@ class CognitoAuthService:
     def get_user(self, access_token: str) -> Dict[str, Any]:
         """Get user details from the access token."""
         try:
-            response = self.client.get_user(
-                AccessToken=access_token
-            )
+            response = self.client.get_user(AccessToken=access_token)
 
             # Extract user attributes
             user_attributes = {
@@ -202,12 +205,11 @@ class CognitoAuthService:
                 for attr in response.get("UserAttributes", [])
             }
 
-            logger.info(f"User details retrieved for username: {response.get('Username')}")
+            logger.info(
+                f"User details retrieved for username: {response.get('Username')}"
+            )
 
-            return {
-                "username": response.get("Username"),
-                "attributes": user_attributes
-            }
+            return {"username": response.get("Username"), "attributes": user_attributes}
 
         except ClientError as e:
             logger.error(f"Get user error: {str(e)}")
@@ -215,3 +217,7 @@ class CognitoAuthService:
         except Exception as e:
             logger.error(f"Unexpected error getting user details: {str(e)}")
             raise ValueError("An unexpected error occurred retrieving user details")
+
+
+# Create a single instance of the service
+auth_service = CognitoAuthService()

@@ -6,7 +6,7 @@ experiments in the experimentation platform. It implements the core functionalit
 AB testing and feature experimentation.
 """
 
-import uuid
+from uuid import UUID
 from typing import List, Dict, Any, Optional
 
 from fastapi import (
@@ -211,7 +211,7 @@ async def create_experiment(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
     # Invalidate cache if enabled
-    if cache_control["enabled"]:
+    if cache_control.get("enabled") and cache_control.get("client"):
         pattern = f"experiments:{current_user.id}:*"
         for key in cache_control["client"].scan_iter(match=pattern):
             cache_control["client"].delete(key)
@@ -226,34 +226,55 @@ async def create_experiment(
     response_description="Returns the experiment details",
 )
 async def get_experiment(
-    experiment_id: uuid.UUID = Path(
-        ..., description="The ID of the experiment to retrieve"
-    ),
+    experiment_id: UUID = Path(..., description="The ID of the experiment to retrieve"),
     db: Session = Depends(deps.get_db),
-    experiment: Experiment = Depends(deps.get_experiment_access),
+    current_user: User = Depends(deps.get_current_active_user),
     cache_control: Dict[str, Any] = Depends(deps.get_cache_control),
 ) -> ExperimentResponse:
     """
-    Get experiment details.
+    Get experiment by ID.
 
-    This endpoint retrieves the complete details of a specific experiment by ID.
-    The user must have access to the experiment (be the owner or have permission).
-
-    The response includes:
-    - Basic experiment information
-    - All variants
-    - All metrics
-    - Current status and dates
+    Retrieves the detailed information for a specific experiment.
+    Users can only access experiments they own or have permission to view.
 
     Returns:
-        ExperimentResponse: Complete experiment details
+        ExperimentResponse: The experiment details
 
     Raises:
-        HTTPException 404: If the experiment doesn't exist
-        HTTPException 403: If the user doesn't have access to this experiment
+        HTTPException 404: If experiment not found
+        HTTPException 403: If user doesn't have access to this experiment
     """
-    # We already have the experiment from the dependency
-    return experiment
+    # Check cache first if enabled
+    if cache_control.get("enabled") and cache_control.get("client"):
+        cache_key = f"experiment:{experiment_id}"
+        cached_data = cache_control["client"].get(cache_key)
+        if cached_data:
+            from pydantic import parse_raw_as
+
+            return parse_raw_as(ExperimentResponse, cached_data)
+
+    # Create experiment service
+    experiment_service = ExperimentService(db)
+
+    # Get experiment
+    experiment = experiment_service.get_experiment_by_id(experiment_id)
+    if not experiment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Experiment not found"
+        )
+
+    # Check access permission
+    experiment = deps.get_experiment_access(experiment, current_user)
+
+    # Cache result if enabled
+    if cache_control.get("enabled") and cache_control.get("client"):
+        cache_control["client"].setex(
+            f"experiment:{experiment_id}",
+            3600,  # Cache for 1 hour
+            ExperimentResponse.from_orm(experiment).json(),
+        )
+
+    return ExperimentResponse.from_orm(experiment)
 
 
 @router.put(
@@ -263,14 +284,12 @@ async def get_experiment(
     response_description="Returns the updated experiment",
 )
 async def update_experiment(
+    experiment_id: UUID = Path(..., description="The ID of the experiment to update"),
     experiment_in: ExperimentUpdate = Body(
         ..., description="Experiment data to update"
     ),
-    experiment_id: uuid.UUID = Path(
-        ..., description="The ID of the experiment to update"
-    ),
     db: Session = Depends(deps.get_db),
-    experiment: Experiment = Depends(deps.get_experiment_access),
+    current_user: User = Depends(deps.get_current_active_user),
     cache_control: Dict[str, Any] = Depends(deps.get_cache_control),
 ) -> ExperimentResponse:
     """
@@ -292,6 +311,16 @@ async def update_experiment(
         HTTPException 400: If the update data is invalid
         HTTPException 403: If updating a running experiment with restricted changes
     """
+    # Get experiment
+    experiment = db.query(Experiment).filter(Experiment.id == experiment_id).first()
+    if not experiment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Experiment not found"
+        )
+
+    # Check access permission
+    experiment = deps.get_experiment_access(experiment, current_user)
+
     # Create experiment service
     experiment_service = ExperimentService(db)
 
@@ -317,7 +346,7 @@ async def update_experiment(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
     # Invalidate cache if enabled
-    if cache_control["enabled"]:
+    if cache_control.get("enabled") and cache_control.get("client"):
         # Delete specific experiment cache
         experiment_cache_key = f"experiment:{experiment_id}"
         cache_control["client"].delete(experiment_cache_key)
@@ -328,7 +357,7 @@ async def update_experiment(
         for key in cache_control["client"].scan_iter(match=pattern):
             cache_control["client"].delete(key)
 
-    return updated_experiment
+    return ExperimentResponse.from_orm(updated_experiment)
 
 
 @router.delete(
@@ -366,13 +395,10 @@ async def update_experiment(
     },
 )
 async def delete_experiment(
-    experiment_id: uuid.UUID = Path(
-        ..., description="The ID of the experiment to delete"
-    ),
+    experiment_id: UUID = Path(..., description="The ID of the experiment to delete"),
     db: Session = Depends(deps.get_db),
-    experiment: Experiment = Depends(deps.get_experiment_access),
-    cache_control: Dict[str, Any] = Depends(deps.get_cache_control),
     current_user: User = Depends(deps.get_current_active_user),
+    cache_control: Dict[str, Any] = Depends(deps.get_cache_control),
 ) -> None:
     """
     Delete an experiment.
@@ -394,6 +420,13 @@ async def delete_experiment(
         HTTPException 403: If the user doesn't have permission to delete this experiment
         HTTPException 404: If the experiment doesn't exist
     """
+    # Get experiment
+    experiment = db.query(Experiment).filter(Experiment.id == experiment_id).first()
+    if not experiment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Experiment not found"
+        )
+
     # Check if the user is either the owner or a superuser
     if experiment.owner_id != current_user.id and not current_user.is_superuser:
         raise HTTPException(
@@ -406,7 +439,7 @@ async def delete_experiment(
     db.commit()
 
     # Invalidate cache if enabled
-    if cache_control["enabled"]:
+    if cache_control.get("enabled") and cache_control.get("client"):
         # Delete specific experiment cache
         experiment_cache_key = f"experiment:{experiment_id}"
         cache_control["client"].delete(experiment_cache_key)
@@ -428,11 +461,9 @@ async def delete_experiment(
     response_description="Returns the started experiment",
 )
 async def start_experiment(
-    experiment_id: uuid.UUID = Path(
-        ..., description="The ID of the experiment to start"
-    ),
+    experiment_id: UUID = Path(..., description="The ID of the experiment to start"),
     db: Session = Depends(deps.get_db),
-    experiment: Experiment = Depends(deps.get_experiment_access),
+    current_user: User = Depends(deps.get_current_active_user),
     cache_control: Dict[str, Any] = Depends(deps.get_cache_control),
 ) -> ExperimentResponse:
     """
@@ -458,6 +489,16 @@ async def start_experiment(
         HTTPException 400: If the experiment cannot be started
         HTTPException 403: If the user doesn't have permission to start this experiment
     """
+    # Get experiment
+    experiment = db.query(Experiment).filter(Experiment.id == experiment_id).first()
+    if not experiment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Experiment not found"
+        )
+
+    # Check access permission
+    experiment = deps.get_experiment_access(experiment, current_user)
+
     # Create experiment service
     experiment_service = ExperimentService(db)
 
@@ -498,7 +539,7 @@ async def start_experiment(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
     # Invalidate cache if enabled
-    if cache_control["enabled"]:
+    if cache_control.get("enabled") and cache_control.get("client"):
         # Delete specific experiment cache
         experiment_cache_key = f"experiment:{experiment_id}"
         cache_control["client"].delete(experiment_cache_key)
@@ -509,7 +550,7 @@ async def start_experiment(
         for key in cache_control["client"].scan_iter(match=pattern):
             cache_control["client"].delete(key)
 
-    return started_experiment
+    return ExperimentResponse.from_orm(started_experiment)
 
 
 @router.post(
@@ -519,11 +560,9 @@ async def start_experiment(
     response_description="Returns the paused experiment",
 )
 async def pause_experiment(
-    experiment_id: uuid.UUID = Path(
-        ..., description="The ID of the experiment to pause"
-    ),
+    experiment_id: UUID = Path(..., description="The ID of the experiment to pause"),
     db: Session = Depends(deps.get_db),
-    experiment: Experiment = Depends(deps.get_experiment_access),
+    current_user: User = Depends(deps.get_current_active_user),
     cache_control: Dict[str, Any] = Depends(deps.get_cache_control),
 ) -> ExperimentResponse:
     """
@@ -543,6 +582,16 @@ async def pause_experiment(
         HTTPException 400: If the experiment cannot be paused
         HTTPException 403: If the user doesn't have permission to pause this experiment
     """
+    # Get experiment
+    experiment = db.query(Experiment).filter(Experiment.id == experiment_id).first()
+    if not experiment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Experiment not found"
+        )
+
+    # Check access permission
+    experiment = deps.get_experiment_access(experiment, current_user)
+
     # Check if experiment can be paused
     if experiment.status != ExperimentStatus.ACTIVE:
         raise HTTPException(
@@ -556,7 +605,7 @@ async def pause_experiment(
     db.refresh(experiment)
 
     # Invalidate cache if enabled
-    if cache_control["enabled"]:
+    if cache_control.get("enabled") and cache_control.get("client"):
         # Delete specific experiment cache
         experiment_cache_key = f"experiment:{experiment_id}"
         cache_control["client"].delete(experiment_cache_key)
@@ -567,7 +616,7 @@ async def pause_experiment(
         for key in cache_control["client"].scan_iter(match=pattern):
             cache_control["client"].delete(key)
 
-    return experiment
+    return ExperimentResponse.from_orm(experiment)
 
 
 @router.post(
@@ -577,11 +626,9 @@ async def pause_experiment(
     response_description="Returns the completed experiment",
 )
 async def complete_experiment(
-    experiment_id: uuid.UUID = Path(
-        ..., description="The ID of the experiment to complete"
-    ),
+    experiment_id: UUID = Path(..., description="The ID of the experiment to complete"),
     db: Session = Depends(deps.get_db),
-    experiment: Experiment = Depends(deps.get_experiment_access),
+    current_user: User = Depends(deps.get_current_active_user),
     cache_control: Dict[str, Any] = Depends(deps.get_cache_control),
 ) -> ExperimentResponse:
     """
@@ -605,6 +652,16 @@ async def complete_experiment(
         HTTPException 400: If the experiment cannot be completed
         HTTPException 403: If the user doesn't have permission to complete this experiment
     """
+    # Get experiment
+    experiment = db.query(Experiment).filter(Experiment.id == experiment_id).first()
+    if not experiment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Experiment not found"
+        )
+
+    # Check access permission
+    experiment = deps.get_experiment_access(experiment, current_user)
+
     # Check if experiment is in a valid state to be completed
     if experiment.status not in [ExperimentStatus.ACTIVE, ExperimentStatus.PAUSED]:
         raise HTTPException(
@@ -616,12 +673,12 @@ async def complete_experiment(
     experiment.status = ExperimentStatus.COMPLETED
     from datetime import datetime, timezone
 
-    experiment.end_date = datetime.now(timezone.utc).isoformat()
+    experiment.end_date = datetime.now(timezone.utc)
     db.commit()
     db.refresh(experiment)
 
     # Invalidate cache if enabled
-    if cache_control["enabled"]:
+    if cache_control.get("enabled") and cache_control.get("client"):
         # Delete specific experiment cache
         experiment_cache_key = f"experiment:{experiment_id}"
         cache_control["client"].delete(experiment_cache_key)
@@ -632,7 +689,7 @@ async def complete_experiment(
         for key in cache_control["client"].scan_iter(match=pattern):
             cache_control["client"].delete(key)
 
-    return experiment
+    return ExperimentResponse.from_orm(experiment)
 
 
 @router.get(
@@ -642,11 +699,11 @@ async def complete_experiment(
     response_description="Returns the experiment results and analysis",
 )
 async def get_experiment_results(
-    experiment_id: uuid.UUID = Path(
+    experiment_id: UUID = Path(
         ..., description="The ID of the experiment to get results for"
     ),
     db: Session = Depends(deps.get_db),
-    experiment: Experiment = Depends(deps.get_experiment_access),
+    current_user: User = Depends(deps.get_current_active_user),
     cache_control: Dict[str, Any] = Depends(deps.get_cache_control),
 ) -> ExperimentResults:
     """
@@ -669,6 +726,16 @@ async def get_experiment_results(
         HTTPException 400: If the experiment has no data or is in DRAFT status
         HTTPException 403: If the user doesn't have permission to view this experiment
     """
+    # Get experiment
+    experiment = db.query(Experiment).filter(Experiment.id == experiment_id).first()
+    if not experiment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Experiment not found"
+        )
+
+    # Check access permission
+    experiment = deps.get_experiment_access(experiment, current_user)
+
     # Check if experiment has results
     if experiment.status == ExperimentStatus.DRAFT:
         raise HTTPException(
@@ -677,7 +744,7 @@ async def get_experiment_results(
         )
 
     # Try to get from cache if enabled
-    if cache_control["enabled"]:
+    if cache_control.get("enabled") and cache_control.get("client"):
         cache_key = f"experiment_results:{experiment_id}"
         cached_data = cache_control["client"].get(cache_key)
         if cached_data:
@@ -695,7 +762,7 @@ async def get_experiment_results(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
     # Cache results if enabled
-    if cache_control["enabled"]:
+    if cache_control.get("enabled") and cache_control.get("client"):
         cache_control["client"].setex(
             f"experiment_results:{experiment_id}",
             3600,  # Cache for 1 hour

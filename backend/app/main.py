@@ -21,6 +21,7 @@ from fastapi.staticfiles import StaticFiles
 
 from backend.app.api.api import api_router
 from backend.app.core.config import settings
+from backend.app.middleware.security_middleware import SecurityHeadersMiddleware
 
 # Configure logging
 logging.basicConfig(
@@ -134,11 +135,26 @@ def create_application() -> FastAPI:
     # Include centralized API router with all versions
     app.include_router(api_router, prefix=settings.API_V1_STR)
 
+    app.add_middleware(GZipMiddleware, minimum_size=1000)
+    app.add_middleware(SecurityHeadersMiddleware)
+
     return app
 
 
 # Create application instance
 app = create_application()
+
+
+# Health check endpoint
+@app.get("/health", tags=["Health"])
+def health_check():
+    """
+    Health check endpoint for infrastructure monitoring.
+
+    Returns a simple JSON response indicating the API is healthy.
+    Used by load balancers and monitoring tools to verify the service is operational.
+    """
+    return {"status": "healthy"}
 
 
 if __name__ == "__main__":

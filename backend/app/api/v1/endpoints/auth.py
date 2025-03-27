@@ -23,15 +23,17 @@ from backend.app.schemas.auth import (
     ConfirmForgotPasswordRequest,
     ConfirmForgotPasswordResponse,
     RefreshTokenRequest,
-    UserInfoResponse
+    UserInfoResponse,
 )
 
-from app.services.auth_service import CognitoAuthService
+from backend.app.services.auth_service import CognitoAuthService
 
 router = APIRouter()
 
 
-@router.post("/signup", response_model=SignUpResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/signup", response_model=SignUpResponse, status_code=status.HTTP_201_CREATED
+)
 def signup(signup_data: SignUpRequest) -> Any:
     """
     Register a new user.

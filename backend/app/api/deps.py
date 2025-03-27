@@ -1,72 +1,125 @@
-"""
-Dependency injection module for FastAPI.
-
-This module provides dependencies that can be injected into API endpoints
-using FastAPI's dependency injection system.
-"""
-
-import logging
-from typing import Generator, Optional, Dict, Any, Union
-import uuid
-import redis
-from fastapi import Depends, HTTPException, status, Header
-from fastapi.security import OAuth2PasswordBearer
-from jose import jwt, JWTError
+from typing import Generator, Optional, Union, Any
+import asyncio
+from fastapi import Depends, HTTPException, status, Header, Request
+from fastapi.security import OAuth2PasswordBearer, APIKeyHeader
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
 
-from backend.app.db.session import SessionLocal
 from backend.app.core.config import settings
+from backend.app.db.session import SessionLocal
 from backend.app.models.user import User
-from backend.app.models.experiment import Experiment, ExperimentStatus
-from backend.app.services.auth_service import CognitoAuthService
+from backend.app.models.experiment import Experiment
+from backend.app.services.auth_service import auth_service
+from loguru import logger
 
-# Configure logging
-logger = logging.getLogger(__name__)
+# Try to import Redis, handle gracefully if not installed
+try:
+    import redis.asyncio as redis
 
-# OAuth2 token URL for password-based authentication
+    REDIS_AVAILABLE = True
+except ImportError:
+    REDIS_AVAILABLE = False
+
+    # Create a dummy redis class to avoid None.Redis error
+    class redis:
+        class Redis:
+            pass
+
+
+# OAuth2 scheme for token authentication
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/auth/token")
 
-# Initialize auth service
-auth_service = CognitoAuthService()
-
-# Redis client for caching if enabled
-redis_client = None
-if hasattr(settings, "USE_REDIS") and settings.USE_REDIS:
-    try:
-        redis_client = redis.Redis(
-            host=settings.REDIS_HOST,
-            port=settings.REDIS_PORT,
-            db=settings.REDIS_DB,
-            password=settings.REDIS_PASSWORD,
-            decode_responses=True,
-        )
-        logger.info("Redis client initialized for caching")
-    except Exception as e:
-        logger.error(f"Failed to initialize Redis client: {str(e)}")
+# API key header extraction
+API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
-def get_db() -> Generator[Session, None, None]:
+# Cache control model
+class CacheControl(BaseModel):
+    """Cache control settings."""
+
+    enabled: bool = False
+    skip: bool = False
+    redis: Optional[object] = None
+
+
+# Redis pool
+_redis_pool = None
+
+
+async def get_redis_pool():
+    """Get Redis connection pool."""
+    global _redis_pool
+    if not REDIS_AVAILABLE:
+        logger.warning("Redis not available, cache disabled")
+        return None
+
+    if _redis_pool is None:
+        try:
+            _redis_pool = redis.Redis(
+                host=settings.REDIS_HOST,
+                port=settings.REDIS_PORT,
+                db=settings.REDIS_DB,
+                decode_responses=True,
+            )
+        except Exception as e:
+            logger.error(f"Redis connection error: {e}")
+            return None
+    return _redis_pool
+
+
+async def get_db() -> Generator[Session, None, None]:
     """
-    Database session dependency.
+    Get database session.
 
     Yields:
-        Generator[Session, None, None]: SQLAlchemy database session
+        Session: Database session
     """
-    db = SessionLocal()
     try:
+        db = SessionLocal()
         yield db
     finally:
         db.close()
 
 
-def get_redis() -> Optional[redis.Redis]:
+def get_token(request: Request) -> str:
     """
-    Redis client dependency for caching.
+    Extract the access token from the Authorization header.
+
+    Args:
+        request (Request): FastAPI request object
 
     Returns:
-        Optional[redis.Redis]: Redis client or None if Redis is disabled
+        str: Access token
+
+    Raises:
+        HTTPException: If the token is not found
     """
-    return redis_client
+    authorization = request.headers.get("Authorization")
+
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization header missing",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    scheme, _, token = authorization.partition(" ")
+
+    if scheme.lower() != "bearer":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication scheme",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token missing",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return token
 
 
 def get_current_user(
@@ -118,25 +171,21 @@ def get_current_user(
         )
 
 
-def get_current_active_user(
-    current_user: User = Depends(get_current_user),
-) -> User:
+def get_current_active_user(current_user: User = Depends(get_current_user)) -> User:
     """
     Get the current active user.
 
     Args:
-        current_user (User): Current authenticated user
+        current_user (User): Current user
 
     Returns:
         User: Current active user
 
     Raises:
-        HTTPException: If user is inactive
+        HTTPException: If the user is inactive
     """
     if not current_user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Inactive user account"
-        )
+        raise HTTPException(status_code=400, detail="Inactive user")
     return current_user
 
 
@@ -147,154 +196,136 @@ def get_current_superuser(
     Get the current superuser.
 
     Args:
-        current_user (User): Current authenticated user
+        current_user (User): Current active user
 
     Returns:
         User: Current superuser
 
     Raises:
-        HTTPException: If user is not a superuser
+        HTTPException: If the user is not a superuser
     """
     if not current_user.is_superuser:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions"
-        )
+        raise HTTPException(status_code=403, detail="Not enough permissions")
     return current_user
 
 
 def get_experiment_access(
-    experiment_id: uuid.UUID,
-    current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db),
+    experiment: Experiment, current_user: User = Depends(get_current_active_user)
 ) -> Experiment:
     """
-    Check if the current user has access to the specified experiment.
+    Check if user has access to experiment.
 
     Args:
-        experiment_id (uuid.UUID): Experiment ID
-        current_user (User): Current authenticated user
-        db (Session): Database session
+        experiment (Experiment): Experiment to check
+        current_user (User): Current active user
 
     Returns:
-        Experiment: The experiment if user has access
+        Experiment: Experiment if user has access
 
     Raises:
-        HTTPException: If experiment not found or user doesn't have access
+        HTTPException: If user does not have access to experiment
     """
-    # Superusers have access to all experiments
-    if current_user.is_superuser:
-        experiment = db.query(Experiment).filter(Experiment.id == experiment_id).first()
-        if not experiment:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Experiment not found"
-            )
+    if experiment is None:
+        raise HTTPException(status_code=404, detail="Experiment not found")
+
+    if current_user.is_superuser or experiment.user_id == current_user.id:
         return experiment
 
-    # Regular users can only access experiments they own
-    experiment = (
-        db.query(Experiment)
-        .filter(Experiment.id == experiment_id, Experiment.owner_id == current_user.id)
-        .first()
-    )
-
-    if not experiment:
-        # Check if experiment exists but user doesn't have access
-        exists = db.query(Experiment).filter(Experiment.id == experiment_id).first()
-        if exists:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Not enough permissions to access this experiment",
-            )
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Experiment not found"
-            )
-
-    return experiment
+    raise HTTPException(status_code=403, detail="Not enough permissions")
 
 
 def get_api_key(
-    x_api_key: str = Header(..., description="API Key for tracking endpoints"),
-    db: Session = Depends(get_db),
-) -> Dict[str, Any]:
+    db: Session = Depends(get_db), api_key_header: str = Depends(API_KEY_HEADER)
+) -> Optional[User]:
     """
-    Validate the API key for tracking endpoints.
+    Validate API key from header and return associated user if valid.
 
     Args:
-        x_api_key (str): API key from header
-        db (Session): Database session
+        db: Database session
+        api_key_header: API key from header
 
     Returns:
-        Dict[str, Any]: API key information
+        User: User associated with the API key
 
     Raises:
-        HTTPException: If API key is invalid
+        HTTPException: If API key is invalid or inactive
     """
-    # TODO: Implement actual API key validation against database
-    # For now, just check against a configured key for simplicity
-    if not hasattr(settings, "API_KEY") or x_api_key != settings.API_KEY:
+    if not api_key_header:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key"
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="API key missing",
+            headers={"WWW-Authenticate": "APIKey"},
         )
 
-    # Return API key information (could include project ID, permissions, etc.)
-    return {"key": x_api_key, "valid": True}
+    # Just return validation failure for now until the API key model is implemented
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid API Key",
+        headers={"WWW-Authenticate": "APIKey"},
+    )
 
 
 def get_experiment_by_key(
-    experiment_key: str,
-    api_key_info: Dict[str, Any] = Depends(get_api_key),
-    db: Session = Depends(get_db),
+    experiment_key: str, db: Session = Depends(get_db)
 ) -> Experiment:
     """
-    Get an experiment by its key for tracking endpoints.
+    Get experiment by key.
 
     Args:
         experiment_key (str): Experiment key
-        api_key_info (Dict[str, Any]): API key information
         db (Session): Database session
 
     Returns:
-        Experiment: The experiment
+        Experiment: Experiment with the given key
 
     Raises:
-        HTTPException: If experiment not found
+        HTTPException: If experiment not found or inactive
     """
-    # Find experiment by key (assuming name is used as key in this implementation)
+    # experiment = db.query(Experiment).filter(Experiment.key == experiment_key).first()
     experiment = (
         db.query(Experiment)
-        .filter(Experiment.name == experiment_key)
-        .filter(Experiment.status == ExperimentStatus.ACTIVE)
+        .filter(getattr(Experiment, "key", None) == experiment_key)
         .first()
     )
-
     if not experiment:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Experiment not found or not active",
-        )
+        raise HTTPException(status_code=404, detail="Experiment not found")
+
+    cache_enabled = getattr(settings, "CACHE_ENABLED", False)
+    if not experiment.is_active:
+        raise HTTPException(status_code=400, detail="Inactive experiment")
 
     return experiment
 
 
-def get_cache_control(
-    skip_cache: bool = False, redis: Optional[redis.Redis] = Depends(get_redis)
-) -> Dict[str, Any]:
+async def get_cache_control(skip_cache: bool = False) -> CacheControl:
     """
-    Dependency for cache control settings.
+    Get cache control settings.
 
     Args:
         skip_cache (bool): Whether to skip cache
-        redis (Optional[redis.Redis]): Redis client
 
     Returns:
-        Dict[str, Any]: Cache control settings
+        CacheControl: Cache control settings
     """
-    # Default TTL if not configured
-    ttl = getattr(settings, "CACHE_TTL", 300)
+    cache_control = CacheControl(skip=skip_cache)
 
-    return {
-        "enabled": redis is not None and not skip_cache,
-        "ttl": ttl,
-        "client": redis,
-    }
+    if skip_cache:
+        return cache_control
+
+    if not hasattr(settings, "CACHE_ENABLED") or not settings.CACHE_ENABLED:
+        return cache_control
+
+    if not REDIS_AVAILABLE:
+        return cache_control
+
+    try:
+        redis_client = await get_redis_pool()
+        if redis_client:
+            # Test connection
+            await redis_client.ping()
+            cache_control.redis = redis_client
+            cache_control.enabled = True
+    except Exception as e:
+        logger.warning(f"Redis connection failed: {e}")
+
+    return cache_control
