@@ -1,0 +1,43 @@
+[pytest]
+testpaths = tests
+python_files = test_*.py
+python_functions = test_*
+python_classes = Test*
+
+# Markers for categorizing tests
+markers =
+    integration: mark a test as an integration test
+    unit: mark a test as a unit test
+    slow: mark a test as a slow test
+
+# Environment variables for tests
+env =
+    ENVIRONMENT=test
+    AWS_DEFAULT_REGION=us-west-2
+    AWS_ACCESS_KEY_ID=test
+    AWS_SECRET_ACCESS_KEY=test
+
+# Verbosity and output formatting
+addopts = --verbose
+
+# Configure test coverage
+# This can also go in .coveragerc, but it's convenient to keep it here
+# for basic configurations
+[coverage:run]
+source = .
+omit = 
+    tests/*
+    setup.py
+    **/__pycache__/*
+    **/site-packages/*
+    .venv/*
+    venv/*
+
+[coverage:report]
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    raise NotImplementedError
+    if __name__ == .__main__.:
+    pass
+    raise ImportError

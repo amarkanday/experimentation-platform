@@ -339,8 +339,12 @@ def test_experiment_variant_relationship(db_session):
     db_session.add(user)
     db_session.flush()
 
-    # Create an experiment
+    # Create an experiment with explicit ID
+    import uuid
+
+    experiment_id = str(uuid.uuid4())
     experiment = Experiment(
+        id=experiment_id,  # Explicitly set ID
         name="Test Experiment",
         description="A test experiment",
         hypothesis="The test hypothesis",
@@ -395,8 +399,12 @@ def test_experiment_metric_relationship(db_session):
     if "sqlite" in str(db_session.bind.engine.url):
         pytest.skip("Skipping relationship test with SQLite")
 
-    # Create an experiment
+    # Create an experiment with explicit ID
+    import uuid
+
+    experiment_id = str(uuid.uuid4())
     experiment = Experiment(
+        id=experiment_id,  # Explicitly set ID
         name="Metric Test",
         description="Testing metrics",
         status=ExperimentStatus.DRAFT,

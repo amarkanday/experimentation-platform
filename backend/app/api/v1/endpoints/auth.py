@@ -1,61 +1,91 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Request
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from typing import Dict, Any, Optional
-from pydantic import BaseModel, EmailStr, Field
+"""
+Authentication endpoints for the API.
+
+This module provides endpoints for user authentication, including
+registration, login, and password reset.
+"""
+
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordRequestForm
+
+from backend.app.api import deps
+
+from backend.app.schemas.auth import (
+    SignUpRequest,
+    SignUpResponse,
+    ConfirmSignUpRequest,
+    ConfirmSignUpResponse,
+    TokenResponse,
+    ForgotPasswordRequest,
+    ForgotPasswordResponse,
+    ConfirmForgotPasswordRequest,
+    ConfirmForgotPasswordResponse,
+    RefreshTokenRequest,
+    UserInfoResponse,
+)
+
 from backend.app.services.auth_service import CognitoAuthService
 
-router = APIRouter(prefix="/auth", tags=["Authentication"])
-auth_service = CognitoAuthService()
+router = APIRouter()
 
 
-# Models for request/response
-class UserSignUpRequest(BaseModel):
-    username: str = Field(..., min_length=3, max_length=50)
-    password: str = Field(..., min_length=8)
-    email: EmailStr
-    given_name: str
-    family_name: str
-    company: Optional[str] = None
-    department: Optional[str] = None
-    role: Optional[str] = None
-
-
-class ConfirmSignUpRequest(BaseModel):
-    username: str
-    confirmation_code: str
-
-
-class ResendCodeRequest(BaseModel):
-    username: str
-
-
-class ForgotPasswordRequest(BaseModel):
-    username: str
-
-
-class ConfirmForgotPasswordRequest(BaseModel):
-    username: str
-    confirmation_code: str
-    new_password: str = Field(..., min_length=8)
-
-
-class ChangePasswordRequest(BaseModel):
-    previous_password: str
-    proposed_password: str = Field(..., min_length=8)
-
-
-class RefreshTokenRequest(BaseModel):
-    refresh_token: str
-
-
-# Define the OAuth2 scheme for token-based authentication
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
-
-
-# Dependency for getting the current user
-async def get_current_user(token: str = Depends(oauth2_scheme)):
+@router.post(
+    "/signup", response_model=SignUpResponse, status_code=status.HTTP_201_CREATED
+)
+def signup(signup_data: SignUpRequest) -> Any:
+    """
+    Register a new user.
+    """
+    auth_service = CognitoAuthService()
     try:
-        return auth_service.get_user(token)
+        response = auth_service.sign_up(
+            username=signup_data.username,
+            password=signup_data.password,
+            email=signup_data.email,
+            given_name=signup_data.given_name,
+            family_name=signup_data.family_name,
+        )
+        return response
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
+
+@router.post("/confirm", response_model=ConfirmSignUpResponse)
+def confirm_signup(confirm_data: ConfirmSignUpRequest) -> Any:
+    """
+    Confirm user registration with the verification code.
+    """
+    auth_service = CognitoAuthService()
+    try:
+        response = auth_service.confirm_sign_up(
+            username=confirm_data.username,
+            confirmation_code=confirm_data.confirmation_code,
+        )
+        return response
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
+
+@router.post("/token", response_model=TokenResponse)
+def login(form_data: OAuth2PasswordRequestForm = Depends()) -> Any:
+    """
+    OAuth2 compatible token login, get an access token for future requests.
+    """
+    auth_service = CognitoAuthService()
+    try:
+        response = auth_service.sign_in(
+            username=form_data.username,
+            password=form_data.password,
+        )
+        return response
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -64,60 +94,55 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
         )
 
 
-# Endpoints
-@router.post("/signup", status_code=status.HTTP_201_CREATED)
-async def signup(user_data: UserSignUpRequest):
+@router.post("/forgot-password", response_model=ForgotPasswordResponse)
+def forgot_password(forgot_password_data: ForgotPasswordRequest) -> Any:
+    """
+    Initiate the forgot password flow.
+    """
+    auth_service = CognitoAuthService()
     try:
-        result = auth_service.sign_up(
-            username=user_data.username,
-            password=user_data.password,
-            email=user_data.email,
-            given_name=user_data.given_name,
-            family_name=user_data.family_name,
-            company=user_data.company,
-            department=user_data.department,
-            role=user_data.role,
+        response = auth_service.forgot_password(
+            username=forgot_password_data.username,
         )
-        return result
+        return response
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
 
 
-@router.post("/confirm")
-async def confirm_signup(data: ConfirmSignUpRequest):
+@router.post("/reset-password", response_model=ConfirmForgotPasswordResponse)
+def reset_password(reset_data: ConfirmForgotPasswordRequest) -> Any:
+    """
+    Complete the forgot password flow by setting a new password.
+    """
+    auth_service = CognitoAuthService()
     try:
-        result = auth_service.confirm_sign_up(data.username, data.confirmation_code)
-        return result
+        response = auth_service.confirm_forgot_password(
+            username=reset_data.username,
+            confirmation_code=reset_data.confirmation_code,
+            new_password=reset_data.new_password,
+        )
+        return response
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
 
 
-@router.post("/resend-code")
-async def resend_confirmation_code(data: ResendCodeRequest):
+@router.post("/refresh", response_model=TokenResponse)
+def refresh_token(refresh_data: RefreshTokenRequest) -> Any:
+    """
+    Refresh the access token using a refresh token.
+    """
+    auth_service = CognitoAuthService()
     try:
-        result = auth_service.resend_confirmation_code(data.username)
-        return result
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-
-
-@router.post("/token")
-async def login(form_data: OAuth2PasswordRequestForm = Depends()):
-    try:
-        result = auth_service.sign_in(form_data.username, form_data.password)
-
-        # Handle challenges
-        if result.get("status") != "SUCCESS":
-            return result
-
-        # Format the response for OAuth2
-        return {
-            "access_token": result.get("access_token"),
-            "token_type": "bearer",
-            "refresh_token": result.get("refresh_token"),
-            "id_token": result.get("id_token"),
-            "expires_in": result.get("expires_in"),
-        }
+        response = auth_service.refresh_token(
+            refresh_token=refresh_data.refresh_token,
+        )
+        return response
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -126,72 +151,18 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
         )
 
 
-@router.post("/challenge")
-async def auth_challenge(
-    challenge_name: str, username: str, session: str, responses: Dict[str, str]
-):
+@router.get("/me", response_model=UserInfoResponse)
+def get_user_info(token: str = Depends(deps.get_token)) -> Any:
+    """
+    Get current user information.
+    """
+    auth_service = CognitoAuthService()
     try:
-        result = auth_service.respond_to_auth_challenge(
-            challenge_name, username, session, responses
-        )
-        return result
+        response = auth_service.get_user(access_token=token)
+        return response
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-
-
-@router.post("/forgot-password")
-async def forgot_password(data: ForgotPasswordRequest):
-    try:
-        result = auth_service.forgot_password(data.username)
-        return result
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-
-
-@router.post("/confirm-forgot-password")
-async def confirm_forgot_password(data: ConfirmForgotPasswordRequest):
-    try:
-        result = auth_service.confirm_forgot_password(
-            data.username, data.confirmation_code, data.new_password
-        )
-        return result
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-
-
-@router.post("/change-password")
-async def change_password(
-    data: ChangePasswordRequest, token: str = Depends(oauth2_scheme)
-):
-    try:
-        result = auth_service.change_password(
-            token, data.previous_password, data.proposed_password
-        )
-        return result
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-
-
-@router.post("/refresh")
-async def refresh_token(data: RefreshTokenRequest):
-    try:
-        result = auth_service.refresh_tokens(data.refresh_token)
-        return result
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
-
-
-@router.post("/logout")
-async def logout(token: str = Depends(oauth2_scheme)):
-    try:
-        result = auth_service.sign_out(token)
-        return result
-    except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(e),
+            headers={"WWW-Authenticate": "Bearer"},
         )
-
-
-@router.get("/me")
-async def get_user_info(user: Dict[str, Any] = Depends(get_current_user)):
-    return user

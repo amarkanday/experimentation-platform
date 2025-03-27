@@ -26,20 +26,38 @@ from .event import Event
 from .feature_flag import FeatureFlag, FeatureFlagOverride, FeatureFlagStatus
 
 # Now set up all bidirectional relationships
-User.experiments = relationship("Experiment", back_populates="owner")
-User.feature_flags = relationship("FeatureFlag", back_populates="owner")
+if not hasattr(User, "experiments") or User.experiments is None:
+    User.experiments = relationship("Experiment", back_populates="owner")
 
-# Add User-Role relationship
-User.roles = relationship("Role", secondary=user_role_association, backref="users")
+if not hasattr(User, "feature_flags") or User.feature_flags is None:
+    User.feature_flags = relationship("FeatureFlag", back_populates="owner")
 
-Variant.assignments = relationship("Assignment", back_populates="variant")
-Experiment.assignments = relationship(
-    "Assignment", back_populates="experiment", cascade="all, delete-orphan"
-)
-Experiment.events = relationship("Event", back_populates="experiment")
+if not hasattr(User, "roles") or User.roles is None:
+    User.roles = relationship("Role", secondary=user_role_association, backref="users")
 
-Assignment.experiment = relationship("Experiment", back_populates="assignments")
-Assignment.variant = relationship("Variant", back_populates="assignments")
+# Variant relationships
+if not hasattr(Variant, "assignments") or Variant.assignments is None:
+    Variant.assignments = relationship("Assignment", back_populates="variant")
+
+# Experiment relationships
+if not hasattr(Experiment, "assignments") or Experiment.assignments is None:
+    Experiment.assignments = relationship(
+        "Assignment", back_populates="experiment", cascade="all, delete-orphan"
+    )
+
+if not hasattr(Experiment, "events") or Experiment.events is None:
+    Experiment.events = relationship("Event", back_populates="experiment")
+
+# Assignment relationships
+if not hasattr(Assignment, "experiment") or Assignment.experiment is None:
+    Assignment.experiment = relationship("Experiment", back_populates="assignments")
+
+if not hasattr(Assignment, "variant") or Assignment.variant is None:
+    Assignment.variant = relationship("Variant", back_populates="assignments")
+
+# Feature Flag relationships
+if not hasattr(FeatureFlag, "events") or FeatureFlag.events is None:
+    FeatureFlag.events = relationship("Event", back_populates="feature_flag")
 
 
 # Now configure all mappers

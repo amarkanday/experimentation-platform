@@ -16,6 +16,7 @@ from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from .base import Base, BaseModel
 import enum
+import uuid  # Import the uuid library
 
 
 class ExperimentStatus(enum.Enum):
@@ -51,6 +52,9 @@ class Experiment(Base, BaseModel):
     """Experiment model for A/B testing."""
 
     __tablename__ = "experiments"
+
+    # Add the id column
+    id = Column(UUID(as_uuid=True), primary_key=True, index=True) # Change this line
 
     name = Column(String(100), nullable=False)
     description = Column(Text)
