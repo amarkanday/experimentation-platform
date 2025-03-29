@@ -7,66 +7,41 @@ in experiments and record user interactions.
 """
 
 from typing import Dict, Any, Optional, List
+from datetime import datetime, timezone
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Path, Body, status
 from sqlalchemy.orm import Session
 
 from backend.app.api import deps
-from backend.app.models.experiment import Experiment
+from backend.app.models.experiment import Experiment, ExperimentStatus
 from backend.app.models.assignment import Assignment
-from backend.app.models.event import Event
+from backend.app.models.event import Event, EventType
+from backend.app.models.feature_flag import FeatureFlag, FeatureFlagStatus
 from backend.app.schemas.tracking import (
     AssignmentRequest,
     AssignmentResponse,
+    EventCreate,
     EventRequest,
     EventResponse,
     EventBatchRequest,
     EventBatchResponse,
 )
+from backend.app.services.assignment_service import AssignmentService
+from backend.app.services.event_service import EventService
 
-# Create router with tag for documentation grouping
-router = APIRouter(
-    prefix="/tracking",
-    tags=["Tracking"],
-    responses={
-        status.HTTP_401_UNAUTHORIZED: {
-            "description": "Invalid API key",
-            "content": {
-                "application/json": {
-                    "example": {
-                        "error": {"status_code": 401, "message": "Invalid API key"}
-                    }
-                }
-            },
-        },
-        status.HTTP_404_NOT_FOUND: {
-            "description": "Experiment not found",
-            "content": {
-                "application/json": {
-                    "example": {
-                        "error": {
-                            "status_code": 404,
-                            "message": "Experiment not found or not active",
-                        }
-                    }
-                }
-            },
-        },
-        status.HTTP_500_INTERNAL_SERVER_ERROR: {
-            "description": "Internal server error",
-            "content": {
-                "application/json": {
-                    "example": {
-                        "error": {
-                            "status_code": 500,
-                            "message": "Internal server error",
-                        }
-                    }
-                }
-            },
-        },
-    },
-)
+# Create router
+router = APIRouter()
+
+
+@router.get("/")
+def get_tracking():
+    """
+    Tracking API information endpoint.
+
+    Returns general information about the tracking API endpoints.
+    """
+    return {"message": "Tracking API Endpoints"}
 
 
 @router.post(
@@ -77,10 +52,8 @@ router = APIRouter(
 )
 async def assign_user_to_experiment(
     request: AssignmentRequest = Body(..., description="Assignment request data"),
-    experiment: Experiment = Depends(deps.get_experiment_by_key),
-    api_key_info: Dict[str, Any] = Depends(deps.get_api_key),
     db: Session = Depends(deps.get_db),
-    cache_control: Dict[str, Any] = Depends(deps.get_cache_control),
+    api_key_info: Dict[str, Any] = Depends(deps.get_api_key),
 ) -> AssignmentResponse:
     """
     Assign a user to an experiment variant.
@@ -107,20 +80,37 @@ async def assign_user_to_experiment(
         HTTPException 404: If the experiment doesn't exist or is not active
         HTTPException 500: If there's an error during assignment
     """
-    # Check for existing assignment
-    existing_assignment = (
-        db.query(Assignment)
+    # Get experiment by key
+    experiment = (
+        db.query(Experiment)
         .filter(
-            Assignment.experiment_id == experiment.id,
-            Assignment.user_id == request.user_id,
+            Experiment.key == request.experiment_key,
+            Experiment.status == ExperimentStatus.ACTIVE,
         )
         .first()
     )
 
-    if existing_assignment:
-        # Return existing assignment
+    if not experiment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Active experiment with key '{request.experiment_key}' not found",
+        )
+
+    # Create assignment service
+    assignment_service = AssignmentService(db)
+
+    try:
+        # Attempt to assign the user
+        assignment_data = assignment_service.assign_user(
+            user_id=request.user_id,
+            experiment_id=str(experiment.id),
+            context=request.context,
+        )
+
+        # Get the variant
+        variant_id = assignment_data.get("variant_id")
         variant = next(
-            (v for v in experiment.variants if v.id == existing_assignment.variant_id),
+            (v for v in experiment.variants if str(v.id) == variant_id),
             None,
         )
 
@@ -130,45 +120,23 @@ async def assign_user_to_experiment(
                 detail="Assigned variant not found in experiment",
             )
 
+        # Create response
         return AssignmentResponse(
-            experiment_key=experiment.name,
+            experiment_key=request.experiment_key,
             variant_name=variant.name,
             is_control=variant.is_control,
             configuration=variant.configuration,
         )
-
-    # Implement assignment logic (simplified for example)
-    # In a real implementation, consider:
-    # 1. Traffic allocation percentages
-    # 2. Targeting rules
-    # 3. Consistent hashing for stable assignments
-
-    # Simplified: Select first variant (in real code, use proper selection logic)
-    if not experiment.variants:
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Experiment has no variants",
+            detail=f"Error assigning user to experiment: {str(e)}",
         )
-
-    selected_variant = experiment.variants[0]
-
-    # Create assignment record
-    new_assignment = Assignment(
-        experiment_id=experiment.id,
-        variant_id=selected_variant.id,
-        user_id=request.user_id,
-        context=request.context,
-    )
-
-    db.add(new_assignment)
-    db.commit()
-
-    return AssignmentResponse(
-        experiment_key=experiment.name,
-        variant_name=selected_variant.name,
-        is_control=selected_variant.is_control,
-        configuration=selected_variant.configuration,
-    )
 
 
 @router.post(
@@ -179,8 +147,8 @@ async def assign_user_to_experiment(
 )
 async def track_event(
     request: EventRequest = Body(..., description="Event data to track"),
-    api_key_info: Dict[str, Any] = Depends(deps.get_api_key),
     db: Session = Depends(deps.get_db),
+    api_key_info: Dict[str, Any] = Depends(deps.get_api_key),
 ) -> EventResponse:
     """
     Track an event for an experiment.
@@ -207,50 +175,83 @@ async def track_event(
         HTTPException 401: If the API key is invalid
         HTTPException 422: If the event data is invalid
     """
-    # Find the experiment if specified
+    # Find experiment ID if specified
     experiment_id = None
+    variant_id = None
     if request.experiment_key:
         experiment = (
             db.query(Experiment)
-            .filter(Experiment.name == request.experiment_key)
+            .filter(Experiment.key == request.experiment_key)
             .first()
         )
 
         if experiment:
             experiment_id = experiment.id
 
-    # Find variant if user has an assignment
-    variant_id = None
-    if experiment_id and request.user_id:
-        assignment = (
-            db.query(Assignment)
-            .filter(
-                Assignment.experiment_id == experiment_id,
-                Assignment.user_id == request.user_id,
+            # Find variant if user has an assignment
+            assignment = (
+                db.query(Assignment)
+                .filter(
+                    Assignment.experiment_id == experiment_id,
+                    Assignment.user_id == request.user_id,
+                )
+                .order_by(Assignment.created_at.desc())
+                .first()
             )
+
+            if assignment:
+                variant_id = assignment.variant_id
+
+    # Find feature flag ID if specified
+    feature_flag_id = None
+    if request.feature_flag_key:
+        feature_flag = (
+            db.query(FeatureFlag)
+            .filter(FeatureFlag.key == request.feature_flag_key)
             .first()
         )
 
-        if assignment:
-            variant_id = assignment.variant_id
+        if feature_flag:
+            feature_flag_id = feature_flag.id
 
-    # Create event record
-    event = Event(
-        event_type=request.event_type,
-        user_id=request.user_id,
-        experiment_id=experiment_id,
-        variant_id=variant_id,
-        value=request.value,
-        event_metadata=request.metadata,
-        created_at=request.timestamp or None,  # Use current time if not specified
-    )
+    # If neither found, return error
+    if not experiment_id and not feature_flag_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Neither experiment key '{request.experiment_key}' nor feature flag key '{request.feature_flag_key}' found",
+        )
 
-    db.add(event)
-    db.commit()
+    try:
+        # Create event data
+        event_data = EventCreate(
+            user_id=request.user_id,
+            event_type=request.event_type,
+            event_name=request.event_type,  # Default to type if no name provided
+            experiment_id=str(experiment_id) if experiment_id else None,
+            feature_flag_id=str(feature_flag_id) if feature_flag_id else None,
+            variant_id=str(variant_id) if variant_id else None,
+            value=request.value,
+            properties=request.metadata,
+            timestamp=request.timestamp or datetime.now(timezone.utc).isoformat(),
+        )
 
-    return EventResponse(
-        success=True, event_id=str(event.id), message="Event successfully tracked"
-    )
+        # Create event service
+        event_service = EventService(db)
+
+        # Track the event
+        event = event_service.track_event(event_data.dict())
+
+        # Return success response
+        return EventResponse(
+            success=True,
+            event_id=event.get("id"),
+            message="Event successfully tracked",
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error tracking event: {str(e)}",
+        )
 
 
 @router.post(
@@ -280,8 +281,8 @@ async def track_events_batch(
             ]
         },
     ),
-    api_key_info: Dict[str, Any] = Depends(deps.get_api_key),
     db: Session = Depends(deps.get_db),
+    api_key_info: Dict[str, Any] = Depends(deps.get_api_key),
 ) -> EventBatchResponse:
     """
     Track multiple events in a single batch operation.
@@ -302,58 +303,92 @@ async def track_events_batch(
         HTTPException 413: If the batch size exceeds the limit
         HTTPException 422: If the batch request format is invalid
     """
+    # Check batch size
     if len(request.events) > 100:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             detail="Batch size exceeds the limit of 100 events",
         )
 
+    # Create event service
+    event_service = EventService(db)
+
+    # Initialize counters
     success_count = 0
     failure_count = 0
     errors = []
 
-    # Process each event in the batch
+    # Process each event
     for index, event_request in enumerate(request.events):
         try:
-            # Find the experiment if specified
+            # Find experiment ID if specified
             experiment_id = None
+            variant_id = None
             if event_request.experiment_key:
                 experiment = (
                     db.query(Experiment)
-                    .filter(Experiment.name == event_request.experiment_key)
+                    .filter(Experiment.key == event_request.experiment_key)
                     .first()
                 )
 
                 if experiment:
                     experiment_id = experiment.id
 
-            # Find variant if user has an assignment
-            variant_id = None
-            if experiment_id and event_request.user_id:
-                assignment = (
-                    db.query(Assignment)
-                    .filter(
-                        Assignment.experiment_id == experiment_id,
-                        Assignment.user_id == event_request.user_id,
+                    # Find variant if user has an assignment
+                    assignment = (
+                        db.query(Assignment)
+                        .filter(
+                            Assignment.experiment_id == experiment_id,
+                            Assignment.user_id == event_request.user_id,
+                        )
+                        .order_by(Assignment.created_at.desc())
+                        .first()
                     )
+
+                    if assignment:
+                        variant_id = assignment.variant_id
+
+            # Find feature flag ID if specified
+            feature_flag_id = None
+            if event_request.feature_flag_key:
+                feature_flag = (
+                    db.query(FeatureFlag)
+                    .filter(FeatureFlag.key == event_request.feature_flag_key)
                     .first()
                 )
 
-                if assignment:
-                    variant_id = assignment.variant_id
+                if feature_flag:
+                    feature_flag_id = feature_flag.id
 
-            # Create event record
-            event = Event(
-                event_type=event_request.event_type,
+            # Skip if neither found
+            if not experiment_id and not feature_flag_id:
+                failure_count += 1
+                errors.append(
+                    {
+                        "index": index,
+                        "event_type": event_request.event_type,
+                        "user_id": event_request.user_id,
+                        "error": f"Neither experiment key '{event_request.experiment_key}' nor feature flag key '{event_request.feature_flag_key}' found",
+                    }
+                )
+                continue
+
+            # Create event data
+            event_data = EventCreate(
                 user_id=event_request.user_id,
-                experiment_id=experiment_id,
-                variant_id=variant_id,
+                event_type=event_request.event_type,
+                event_name=event_request.event_type,  # Default to type if no name provided
+                experiment_id=str(experiment_id) if experiment_id else None,
+                feature_flag_id=str(feature_flag_id) if feature_flag_id else None,
+                variant_id=str(variant_id) if variant_id else None,
                 value=event_request.value,
-                event_metadata=event_request.metadata,
-                created_at=event_request.timestamp or None,
+                properties=event_request.metadata,
+                timestamp=event_request.timestamp
+                or datetime.now(timezone.utc).isoformat(),
             )
 
-            db.add(event)
+            # Track the event
+            event_service.track_event(event_data.dict())
             success_count += 1
 
         except Exception as e:
@@ -367,12 +402,52 @@ async def track_events_batch(
                 }
             )
 
-    # Commit all successful events
-    if success_count > 0:
-        db.commit()
-
+    # Return batch response
     return EventBatchResponse(
         success_count=success_count,
         failure_count=failure_count,
         errors=errors if errors else None,
     )
+
+
+@router.get(
+    "/assignments/{user_id}",
+    response_model=List[Dict[str, Any]],
+    summary="Get user's experiment assignments",
+    response_description="Returns all active experiment assignments for a user",
+)
+async def get_user_assignments(
+    user_id: str = Path(..., description="ID of the user"),
+    db: Session = Depends(deps.get_db),
+    api_key_info: Dict[str, Any] = Depends(deps.get_api_key),
+    active_only: bool = Query(
+        True, description="Only return active experiment assignments"
+    ),
+) -> List[Dict[str, Any]]:
+    """
+    Get all experiment assignments for a user.
+
+    This endpoint retrieves all experiment variants assigned to a specific user.
+    By default, it only returns assignments for active experiments.
+
+    **Authentication**: Requires a valid API key in the X-API-Key header.
+
+    Returns:
+        List[Dict[str, Any]]: List of assignment details for the user
+
+    Raises:
+        HTTPException 401: If the API key is invalid
+        HTTPException 404: If user has no assignments
+    """
+    # Create assignment service
+    assignment_service = AssignmentService(db)
+
+    # Get user assignments
+    assignments = assignment_service.get_user_assignments(
+        user_id=user_id, active_only=active_only
+    )
+
+    if not assignments:
+        return []
+
+    return assignments

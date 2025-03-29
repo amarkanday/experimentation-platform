@@ -5,8 +5,6 @@ This module defines Pydantic models for experiment-related data structures.
 These models are used for request/response validation and documentation.
 """
 
-from backend.app.schemas.experiment_schemas import ExperimentResponse
-import uuid
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Union
 from enum import Enum
@@ -16,8 +14,6 @@ from pydantic import (
     validator,
     root_validator,
     UUID4,
-    EmailStr,
-    HttpUrl,
 )
 
 
@@ -266,53 +262,66 @@ class ExperimentUpdate(BaseModel):
         return v
 
 
-class ExperimentInDB(ExperimentBase):
-    """Model for experiment as stored in the database."""
-
-    id: UUID4
-    status: ExperimentStatus
-    owner_id: UUID4
-    start_date: Optional[datetime] = None
-    end_date: Optional[datetime] = None
-    created_at: datetime
-    updated_at: datetime
-
-
-class VariantInDB(VariantBase):
-    """Model for variant as stored in the database."""
-
-    id: UUID4
-    experiment_id: UUID4
-    created_at: datetime
-    updated_at: datetime
-
-
-class MetricInDB(MetricBase):
-    """Model for metric as stored in the database."""
-
-    id: UUID4
-    experiment_id: UUID4
-    created_at: datetime
-    updated_at: datetime
-
-
-class VariantResponse(VariantInDB):
+class VariantResponse(BaseModel):
     """Model for variant response data."""
 
-    pass
+    id: UUID4
+    name: str
+    description: Optional[str] = None
+    is_control: bool
+    traffic_allocation: int
+    configuration: Optional[Dict[str, Any]] = None
+    experiment_id: UUID4
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        orm_mode = True
 
 
-class MetricResponse(MetricInDB):
+class MetricResponse(BaseModel):
     """Model for metric response data."""
 
-    pass
+    id: UUID4
+    name: str
+    description: Optional[str] = None
+    event_name: str
+    metric_type: str
+    is_primary: bool
+    aggregation_method: str
+    minimum_sample_size: int
+    expected_effect: Optional[float] = None
+    event_value_path: Optional[str] = None
+    lower_is_better: bool
+    experiment_id: UUID4
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        orm_mode = True
 
 
-class ExperimentResponse(ExperimentInDB):
+class ExperimentResponse(BaseModel):
     """Model for experiment response data."""
 
+    id: UUID4
+    name: str
+    description: Optional[str] = None
+    hypothesis: Optional[str] = None
+    experiment_type: str
+    status: str
+    targeting_rules: Optional[Dict[str, Any]] = None
+    tags: Optional[List[str]] = None
+    owner_id: UUID4
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
     variants: List[VariantResponse]
     metrics: List[MetricResponse]
+
+    class Config:
+        orm_mode = True
 
 
 class ExperimentListResponse(BaseModel):

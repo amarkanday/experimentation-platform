@@ -4,7 +4,19 @@ from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from .base import Base, BaseModel
 from sqlalchemy.orm import configure_mappers
+from enum import Enum
+
 # configure_mappers()
+
+
+class EventType(str, Enum):
+    """Event type enum."""
+
+    EXPOSURE = "exposure"  # User was exposed to a variant
+    CONVERSION = "conversion"  # User completed a desired action
+    CLICK = "click"  # User clicked on a tracked element
+    PAGE_VIEW = "page_view"  # User viewed a tracked page
+    CUSTOM = "custom"  # Custom event type
 
 
 class Event(Base, BaseModel):

@@ -1,170 +1,86 @@
 """
-Main FastAPI application entry point with enhanced documentation.
+Main application module.
 
-This module initializes the FastAPI application with appropriate settings,
-middleware, documentation endpoints, and routers.
+This module initializes the FastAPI application with all middleware,
+routes, and event handlers.
 """
 
-import logging
-from typing import Dict, Any, List
-
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import JSONResponse
-from fastapi.exceptions import RequestValidationError
-from starlette.exceptions import HTTPException as StarletteHTTPException
-from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
 from fastapi.openapi.utils import get_openapi
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
 
 from backend.app.api.api import api_router
 from backend.app.core.config import settings
 from backend.app.middleware.security_middleware import SecurityHeadersMiddleware
-
-# Configure logging
-logging.basicConfig(
-    level=getattr(logging, settings.LOG_LEVEL),
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
-logger = logging.getLogger(__name__)
+from backend.app.middleware.logging_middleware import LoggingMiddleware
 
 
-# Create application
 def create_application() -> FastAPI:
-    """
-    Create and configure the FastAPI application.
-
-    Returns:
-        FastAPI: Configured FastAPI application with documentation
-    """
-    # Initialize FastAPI with customized documentation settings
-    app = FastAPI(
+    """Create and configure the FastAPI application."""
+    application = FastAPI(
         title=settings.PROJECT_NAME,
-        description=settings.DESCRIPTION,
-        version=settings.VERSION,
-        debug=settings.DEBUG,
-        # Set OpenAPI URL (used by both Swagger UI and ReDoc)
-        openapi_url=f"{settings.API_V1_STR}/openapi.json",
-        # Configure documentation URLs - disable in production if needed
-        docs_url=(
-            f"{settings.API_V1_STR}/docs" if settings.ENVIRONMENT != "prod" else None
-        ),
-        redoc_url=(
-            f"{settings.API_V1_STR}/redoc" if settings.ENVIRONMENT != "prod" else None
-        ),
-        # Set terms of service and contact info
-        terms_of_service="https://example.com/terms/",
-        contact={
-            "name": "API Support",
-            "url": "https://example.com/support",
-            "email": "api@example.com",
-        },
-        # Set license info
-        license_info={
-            "name": "Internal Use Only",
-            "url": "https://example.com/license",
-        },
+        description=settings.PROJECT_DESCRIPTION,
+        version=settings.PROJECT_VERSION,
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
     )
 
-    # Custom OpenAPI schema generator (optional)
-    def custom_openapi():
-        if app.openapi_schema:
-            return app.openapi_schema
+    # Add CORS middleware
+    application.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.CORS_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
-        openapi_schema = get_openapi(
-            title=app.title,
-            version=app.version,
-            description=app.description,
-            routes=app.routes,
-            tags=app.openapi_tags,
-            servers=[
-                {
-                    "url": settings.SERVER_URL,
-                    "description": f"{settings.ENVIRONMENT} environment",
-                },
-            ],
+    # Add security headers middleware
+    application.add_middleware(SecurityHeadersMiddleware)
+
+    # Add logging middleware
+    application.add_middleware(LoggingMiddleware)
+
+    # Add application routes
+    application.include_router(api_router, prefix=settings.API_V1_STR)
+
+    # Add OpenAPI documentation routes
+    @application.get("/api/v1/openapi.json", include_in_schema=False)
+    async def get_openapi_schema():
+        return get_openapi(
+            title=settings.PROJECT_NAME,
+            version=settings.PROJECT_VERSION,
+            description=settings.PROJECT_DESCRIPTION,
+            routes=application.routes,
         )
 
-        # Add security schemes
-        openapi_schema["components"]["securitySchemes"] = {
-            "OAuth2PasswordBearer": {
-                "type": "oauth2",
-                "flows": {
-                    "password": {
-                        "tokenUrl": f"{settings.API_V1_STR}/auth/token",
-                        "scopes": {},
-                    }
-                },
-            },
-            "APIKeyHeader": {
-                "type": "apiKey",
-                "in": "header",
-                "name": "X-API-Key",
-            },
-        }
+    @application.get("/api/v1/docs", include_in_schema=False)
+    async def get_swagger_docs():
+        return get_swagger_ui_html(
+            openapi_url="/api/v1/openapi.json",
+            title=f"{settings.PROJECT_NAME} - Swagger UI",
+        )
 
-        app.openapi_schema = openapi_schema
-        return app.openapi_schema
+    @application.get("/api/v1/redoc", include_in_schema=False)
+    async def get_redoc_docs():
+        return get_redoc_html(
+            openapi_url="/api/v1/openapi.json",
+            title=f"{settings.PROJECT_NAME} - ReDoc",
+        )
 
-    # Apply custom OpenAPI schema
-    app.openapi = custom_openapi
+    # Add health check endpoint
+    @application.get("/health", include_in_schema=False)
+    async def health_check():
+        return {"status": "healthy"}
 
-    # Configure CORS middleware
-    origins: List[str] = []
-    if settings.BACKEND_CORS_ORIGINS:
-        origins = [str(origin) for origin in settings.BACKEND_CORS_ORIGINS]
-
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=origins,
-        allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-        allow_headers=["Authorization", "Content-Type", "X-API-Key"],
-        expose_headers=["Content-Length", "Content-Disposition"],
-        max_age=600,  # Cache preflight requests for 10 minutes
-    )
-
-    # Add GZip compression for API responses
-    app.add_middleware(GZipMiddleware, minimum_size=1000)
-
-    # Include static files if needed (for custom documentation)
-    # app.mount("/static", StaticFiles(directory="static"), name="static")
-
-    # Include centralized API router with all versions
-    app.include_router(api_router, prefix=settings.API_V1_STR)
-
-    app.add_middleware(GZipMiddleware, minimum_size=1000)
-    app.add_middleware(SecurityHeadersMiddleware)
-
-    return app
+    return application
 
 
-# Create application instance
+# Create the application instance
 app = create_application()
 
-
-# Health check endpoint
-@app.get("/health", tags=["Health"])
-def health_check():
-    """
-    Health check endpoint for infrastructure monitoring.
-
-    Returns a simple JSON response indicating the API is healthy.
-    Used by load balancers and monitoring tools to verify the service is operational.
-    """
-    return {"status": "healthy"}
-
-
-if __name__ == "__main__":
-    """Run the application using Uvicorn when executed directly."""
-    import uvicorn
-
-    uvicorn.run(
-        "backend.app.main:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=settings.DEBUG,
-        log_level=settings.LOG_LEVEL.lower(),
-    )
+# This allows other modules to import the application instance
+# without creating circular imports
+__all__ = ["app"]

@@ -9,11 +9,12 @@ from .endpoints import (
     auth,
     users,
     experiments,
-    variants,
-    metrics,
     feature_flags,
     assignments,
     events,
+    results,
+    tracking,
+    admin,
 )
 
 # Create the main router for v1 API
@@ -25,8 +26,7 @@ api_router.include_router(users.router, prefix="/users", tags=["Users"])
 api_router.include_router(
     experiments.router, prefix="/experiments", tags=["Experiments"]
 )
-api_router.include_router(variants.router, prefix="/variants", tags=["Variants"])
-api_router.include_router(metrics.router, prefix="/metrics", tags=["Metrics"])
+api_router.include_router(tracking.router, prefix="/tracking", tags=["Tracking"])
 api_router.include_router(
     feature_flags.router, prefix="/feature-flags", tags=["Feature Flags"]
 )
@@ -34,3 +34,5 @@ api_router.include_router(
     assignments.router, prefix="/assignments", tags=["Assignments"]
 )
 api_router.include_router(events.router, prefix="/events", tags=["Events"])
+api_router.include_router(results.router, prefix="/results", tags=["Results"])
+api_router.include_router(admin.router, prefix="/admin", tags=["Administration"])

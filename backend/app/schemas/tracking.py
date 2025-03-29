@@ -58,6 +58,22 @@ class AssignmentResponse(BaseModel):
         }
 
 
+class EventCreate(BaseModel):
+    """Model for creating an event."""
+
+    user_id: str = Field(..., min_length=1, description="User identifier")
+    event_type: str = Field(..., min_length=1, description="Type of event")
+    event_name: Optional[str] = Field(None, description="Name of the event")
+    experiment_id: Optional[str] = Field(None, description="Experiment identifier")
+    feature_flag_id: Optional[str] = Field(None, description="Feature flag identifier")
+    variant_id: Optional[str] = Field(None, description="Variant identifier")
+    value: Optional[float] = Field(None, description="Numeric value for the event")
+    properties: Optional[Dict[str, Any]] = Field(
+        None, description="Additional event data"
+    )
+    timestamp: Optional[str] = Field(None, description="Event timestamp")
+
+
 class EventRequest(BaseModel):
     """Model for tracking an event."""
 
@@ -69,7 +85,7 @@ class EventRequest(BaseModel):
     metadata: Optional[Dict[str, Any]] = Field(
         None, description="Additional event data"
     )
-    timestamp: Optional[datetime] = Field(None, description="Event timestamp")
+    timestamp: Optional[str] = Field(None, description="Event timestamp")
 
     class Config:
         schema_extra = {
@@ -214,24 +230,3 @@ class EventQueryParams(BaseModel):
         if start_date and v and v < start_date:
             raise ValueError("end_date must be after start_date")
         return v
-
-
-class EventSummary(BaseModel):
-    """Model for event summary statistics."""
-
-    event_type: str
-    count: int
-    average_value: Optional[float] = None
-    min_value: Optional[float] = None
-    max_value: Optional[float] = None
-    sum_value: Optional[float] = None
-
-
-class ExperimentEventSummary(BaseModel):
-    """Model for experiment event summary."""
-
-    experiment_id: UUID4
-    experiment_name: str
-    variant_summaries: Dict[str, List[EventSummary]]
-    total_users: Dict[str, int]  # Users per variant
-    conversion_rates: Optional[Dict[str, float]] = None  # Conversion rates per variant

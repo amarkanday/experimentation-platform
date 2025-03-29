@@ -1,74 +1,61 @@
-# backend/app/db/session.py
 """
-Database session management.
+Database session and connection management.
 
-This module provides SQLAlchemy session factories and engine configuration.
-It also handles database connection setup and cleanup.
+This module provides database session functionality and connection pooling
+for the application.
 """
 
-import logging
 import os
 from typing import Generator
-from urllib.parse import urlparse, urlunparse
-
-from sqlalchemy import create_engine, text
+from urllib.parse import urlparse
+from sqlalchemy import create_engine, MetaData
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
-from sqlalchemy.pool import QueuePool
+from sqlalchemy.orm import sessionmaker
 
 from backend.app.core.config import settings
 
-# Configure logging
-logger = logging.getLogger(__name__)
+# Check for DATABASE_URI environment variable, otherwise use settings
+database_uri = os.getenv("DATABASE_URI")
+if not database_uri:
+    # Fall back to SQLALCHEMY_DATABASE_URI if set
+    if hasattr(settings, "SQLALCHEMY_DATABASE_URI") and settings.SQLALCHEMY_DATABASE_URI:
+        database_uri = str(settings.SQLALCHEMY_DATABASE_URI)
+    # Fall back to DATABASE_URI if set
+    elif hasattr(settings, "DATABASE_URI") and settings.DATABASE_URI:
+        database_uri = str(settings.DATABASE_URI)
+    # Fall back to constructing from components
+    else:
+        database_uri = f"postgresql://{settings.POSTGRES_USER}:{settings.POSTGRES_PASSWORD}@{settings.POSTGRES_SERVER}:{settings.POSTGRES_PORT}/{settings.POSTGRES_DB}"
 
-# Clean up the DB URI to avoid malformed paths
-parsed = urlparse(os.getenv("DATABASE_URI", str(settings.SQLALCHEMY_DATABASE_URI)))
-clean_path = parsed.path.replace("//", "/")
-database_url = urlunparse(parsed._replace(path=clean_path))
+# Parse the database URI to get the schema
+parsed = urlparse(database_uri)
+db_schema = "experimentation"
 
-# Create the SQLAlchemy engine with appropriate pool settings
-engine_args = {
-    "pool_pre_ping": True,
-    "echo": settings.DEBUG,
-    "poolclass": QueuePool,
-    "pool_size": settings.DB_POOL_SIZE,
-    "max_overflow": settings.DB_MAX_OVERFLOW,
-    "pool_timeout": settings.DB_POOL_TIMEOUT,
-    "pool_recycle": settings.DB_POOL_RECYCLE,
-}
+# Configure metadata with schema
+metadata = MetaData(schema=db_schema)
 
-# Create different engines based on environment
-if settings.ENVIRONMENT == "test":
-    # Use a smaller pool for testing
-    engine_args.update({"pool_size": 2, "max_overflow": 0})
-elif settings.ENVIRONMENT == "prod":
-    # Disable echoing SQL in production for security
-    engine_args["echo"] = False
+# Create engine with appropriate configuration
+engine = create_engine(
+    database_uri,
+    pool_pre_ping=True,  # Test connections before using them
+    pool_size=5,  # Reasonable default for most applications
+    max_overflow=10,  # Allow up to 10 additional connections
+    pool_recycle=3600,  # Recycle connections after 1 hour
+)
 
-# Create the SQLAlchemy engine
-engine = create_engine(database_url, **engine_args)
-
-# Create a session factory
+# Session factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# Base class for models
-Base = declarative_base()
+# Base class for SQLAlchemy models
+Base = declarative_base(metadata=metadata)
 
 
-# Dependency for FastAPI endpoints
-def get_db() -> Generator[Session, None, None]:
+async def get_db() -> Generator:
     """
-    Get a database session for dependency injection in FastAPI endpoints.
+    Get a database session.
 
     Yields:
-        Session: SQLAlchemy database session
-
-    Usage:
-        ```
-        @app.get("/items/")
-        async def read_items(db: Session = Depends(get_db)):
-            ...
-        ```
+        Generator: A SQLAlchemy session
     """
     db = SessionLocal()
     try:
@@ -77,61 +64,20 @@ def get_db() -> Generator[Session, None, None]:
         db.close()
 
 
-def initialize_db(create_schema: bool = True, recreate_tables: bool = False) -> None:
-    """
-    Initialize the database with schema and tables.
+def init_db() -> None:
+    """Initialize the database by creating all tables."""
+    # Import all models here to ensure they are registered with the metadata
+    from backend.app.models import user, experiment, feature_flag, event, assignment
 
-    Args:
-        create_schema: Whether to create the schema if it doesn't exist
-        recreate_tables: Whether to drop and recreate all tables (DANGEROUS in production)
-    """
-    # Ensure all models are loaded before table creation
-    from backend.app import models  # noqa: F401
-
-    # Only perform schema/table creation in development and testing
-    if settings.ENVIRONMENT not in ["dev", "test"] and recreate_tables:
-        logger.warning("Table recreation is disabled in non-development environments")
-        return
-
-    try:
-        # Create schema if needed
-        if create_schema:
-            logger.info(
-                f"Creating schema '{settings.POSTGRES_SCHEMA}' if it doesn't exist"
-            )
-            with engine.connect() as conn:
-                conn.execute(
-                    text(f"CREATE SCHEMA IF NOT EXISTS {settings.POSTGRES_SCHEMA}")
-                )
-                conn.commit()
-
-        # Recreate tables if requested
-        if recreate_tables:
-            logger.info(f"Rebuilding all tables for {settings.POSTGRES_SCHEMA} schema")
-            # Ensure search path is set correctly
-            with engine.connect() as conn:
-                conn.execute(text(f"SET search_path TO {settings.POSTGRES_SCHEMA}"))
-                conn.commit()
-
-            # Drop and recreate tables
-            Base.metadata.drop_all(bind=engine)
-            Base.metadata.create_all(bind=engine)
-            logger.info("All tables recreated successfully")
-
-    except Exception as e:
-        logger.error(f"Database initialization failed: {str(e)}")
-        raise
+    # Create tables
+    Base.metadata.create_all(bind=engine)
 
 
-# Initialize the database only in development and testing environments
-# For production, use Alembic migrations instead
-if settings.ENVIRONMENT in ["dev", "test"] and os.getenv("SKIP_DB_INIT") != "1":
-    # This will run when the module is imported - be careful!
-    try:
-        initialize_db(
-            create_schema=True,
-            # Only recreate tables automatically in test environment
-            recreate_tables=(settings.ENVIRONMENT == "test"),
-        )
-    except Exception as e:
-        logger.error(f"Failed to initialize database: {str(e)}")
+def reset_db() -> None:
+    """Reset the database by dropping and recreating all tables."""
+    # Import all models here to ensure they are registered with the metadata
+    from backend.app.models import user, experiment, feature_flag, event, assignment
+
+    # Drop and recreate tables
+    Base.metadata.drop_all(bind=engine)
+    Base.metadata.create_all(bind=engine)
