@@ -119,9 +119,9 @@ async def list_feature_flags(
     feature_flag_service = FeatureFlagService(db)
 
     # Try to get from cache if enabled
-    if cache_control.get("enabled") and cache_control.get("client"):
+    if cache_control.enabled and cache_control.redis:
         cache_key = f"feature_flags:{current_user.id}:{status_filter or 'all'}:{skip}:{limit}:{search or ''}"
-        cached_data = cache_control["client"].get(cache_key)
+        cached_data = cache_control.redis.get(cache_key)
         if cached_data:
             import json
 
@@ -135,10 +135,10 @@ async def list_feature_flags(
     )
 
     # Cache result if enabled
-    if cache_control.get("enabled") and cache_control.get("client"):
+    if cache_control.enabled and cache_control.redis:
         import json
 
-        cache_control["client"].setex(
+        cache_control.redis.setex(
             cache_key,
             3600,  # Cache for 1 hour
             json.dumps(feature_flags),
@@ -187,14 +187,7 @@ async def create_feature_flag(
     feature_flag_service = FeatureFlagService(db)
 
     # Check if feature flag with the same key already exists
-    existing_flag = next(
-        (
-            f
-            for f in feature_flag_service.get_feature_flags()
-            if f["key"] == feature_flag_in.key
-        ),
-        None,
-    )
+    existing_flag = db.query(FeatureFlag).filter(FeatureFlag.key == feature_flag_in.key).first()
     if existing_flag:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -210,10 +203,10 @@ async def create_feature_flag(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
     # Invalidate cache if enabled
-    if cache_control.get("enabled") and cache_control.get("client"):
+    if cache_control.enabled and cache_control.redis:
         pattern = f"feature_flags:{current_user.id}:*"
-        for key in cache_control["client"].scan_iter(match=pattern):
-            cache_control["client"].delete(key)
+        for key in cache_control.redis.scan_iter(match=pattern):
+            cache_control.redis.delete(key)
 
     return feature_flag
 
@@ -244,9 +237,9 @@ async def get_feature_flag(
         HTTPException 403: If user doesn't have access to this feature flag
     """
     # Check cache first if enabled
-    if cache_control.get("enabled") and cache_control.get("client"):
+    if cache_control.enabled and cache_control.redis:
         cache_key = f"feature_flag:{flag_id}"
-        cached_data = cache_control["client"].get(cache_key)
+        cached_data = cache_control.redis.get(cache_key)
         if cached_data:
             import json
 
@@ -272,10 +265,10 @@ async def get_feature_flag(
         )
 
     # Cache result if enabled
-    if cache_control.get("enabled") and cache_control.get("client"):
+    if cache_control.enabled and cache_control.redis:
         import json
 
-        cache_control["client"].setex(
+        cache_control.redis.setex(
             f"feature_flag:{flag_id}",
             3600,  # Cache for 1 hour
             json.dumps(feature_flag),
@@ -358,15 +351,15 @@ async def update_feature_flag(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
     # Invalidate cache if enabled
-    if cache_control.get("enabled") and cache_control.get("client"):
+    if cache_control.enabled and cache_control.redis:
         # Delete specific feature flag cache
         flag_cache_key = f"feature_flag:{flag_id}"
-        cache_control["client"].delete(flag_cache_key)
+        cache_control.redis.delete(flag_cache_key)
 
         # Delete feature flag list caches
         pattern = f"feature_flags:{current_user.id}:*"
-        for key in cache_control["client"].scan_iter(match=pattern):
-            cache_control["client"].delete(key)
+        for key in cache_control.redis.scan_iter(match=pattern):
+            cache_control.redis.delete(key)
 
     return updated_flag
 
@@ -455,15 +448,15 @@ async def delete_feature_flag(
     feature_flag_service.delete_feature_flag(flag)
 
     # Invalidate cache if enabled
-    if cache_control.get("enabled") and cache_control.get("client"):
+    if cache_control.enabled and cache_control.redis:
         # Delete specific feature flag cache
         flag_cache_key = f"feature_flag:{flag_id}"
-        cache_control["client"].delete(flag_cache_key)
+        cache_control.redis.delete(flag_cache_key)
 
         # Delete feature flag list caches
         pattern = f"feature_flags:*"
-        for key in cache_control["client"].scan_iter(match=pattern):
-            cache_control["client"].delete(key)
+        for key in cache_control.redis.scan_iter(match=pattern):
+            cache_control.redis.delete(key)
 
     # Return 204 No Content
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -530,15 +523,15 @@ async def activate_feature_flag(
     activated_flag = feature_flag_service.activate_feature_flag(flag)
 
     # Invalidate cache if enabled
-    if cache_control.get("enabled") and cache_control.get("client"):
+    if cache_control.enabled and cache_control.redis:
         # Delete specific feature flag cache
         flag_cache_key = f"feature_flag:{flag_id}"
-        cache_control["client"].delete(flag_cache_key)
+        cache_control.redis.delete(flag_cache_key)
 
         # Delete feature flag list caches
         pattern = f"feature_flags:*"
-        for key in cache_control["client"].scan_iter(match=pattern):
-            cache_control["client"].delete(key)
+        for key in cache_control.redis.scan_iter(match=pattern):
+            cache_control.redis.delete(key)
 
     return activated_flag
 
@@ -604,15 +597,15 @@ async def deactivate_feature_flag(
     deactivated_flag = feature_flag_service.deactivate_feature_flag(flag)
 
     # Invalidate cache if enabled
-    if cache_control.get("enabled") and cache_control.get("client"):
+    if cache_control.enabled and cache_control.redis:
         # Delete specific feature flag cache
         flag_cache_key = f"feature_flag:{flag_id}"
-        cache_control["client"].delete(flag_cache_key)
+        cache_control.redis.delete(flag_cache_key)
 
         # Delete feature flag list caches
         pattern = f"feature_flags:*"
-        for key in cache_control["client"].scan_iter(match=pattern):
-            cache_control["client"].delete(key)
+        for key in cache_control.redis.scan_iter(match=pattern):
+            cache_control.redis.delete(key)
 
     return deactivated_flag
 

@@ -37,7 +37,6 @@ from backend.app.services.analysis_service import AnalysisService
 
 # Create router with tag for documentation grouping
 router = APIRouter(
-    prefix="/experiments",
     tags=["Experiments"],
     responses={
         status.HTTP_401_UNAUTHORIZED: {
@@ -180,20 +179,15 @@ async def create_experiment(
 ) -> ExperimentResponse:
     """
     Create a new experiment.
-
     This endpoint allows users to create a new experiment. The current user
     is automatically set as the owner of the experiment.
-
     The request must include:
     - Basic experiment information (name, description, hypothesis)
     - At least two variants (one must be marked as control)
     - At least one metric to track
-
     The experiment is created in DRAFT status by default.
-
     Returns:
         ExperimentResponse: The newly created experiment with all details
-
     Raises:
         HTTPException: If the experiment data is invalid or creation fails
     """
@@ -207,7 +201,8 @@ async def create_experiment(
     # Create experiment
     try:
         experiment = experiment_service.create_experiment(
-            ExperimentCreate(**experiment_data)
+            obj_in=ExperimentCreate(**experiment_data),
+            user_id=current_user.id,  # Add the user_id parameter
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
