@@ -1,10 +1,6 @@
-# models/__init__.py
-from sqlalchemy.orm import relationship, configure_mappers
+# Centralized model imports and initialization
 
-# Import base classes first
-from .base import Base, BaseModel
-
-# Import all model classes
+from .base import Base, BaseModel, BaseModelMixin
 from .user import (
     User,
     Role,
@@ -15,70 +11,40 @@ from .user import (
 from .experiment import (
     Experiment,
     Variant,
+    Metric,
     ExperimentStatus,
     ExperimentType,
-    Metric,
     MetricType,
 )
-
-from .assignment import Assignment
-from .event import Event
 from .feature_flag import FeatureFlag, FeatureFlagOverride, FeatureFlagStatus
+from .event import Event, EventType
+from .assignment import Assignment
+from .api_key import APIKey
 
-# Now set up all bidirectional relationships
-if not hasattr(User, "experiments") or User.experiments is None:
-    User.experiments = relationship("Experiment", back_populates="owner")
-
-if not hasattr(User, "feature_flags") or User.feature_flags is None:
-    User.feature_flags = relationship("FeatureFlag", back_populates="owner")
-
-if not hasattr(User, "roles") or User.roles is None:
-    User.roles = relationship("Role", secondary=user_role_association, backref="users")
-
-# Variant relationships
-if not hasattr(Variant, "assignments") or Variant.assignments is None:
-    Variant.assignments = relationship("Assignment", back_populates="variant")
-
-# Experiment relationships
-if not hasattr(Experiment, "assignments") or Experiment.assignments is None:
-    Experiment.assignments = relationship(
-        "Assignment", back_populates="experiment", cascade="all, delete-orphan"
-    )
-
-if not hasattr(Experiment, "events") or Experiment.events is None:
-    Experiment.events = relationship("Event", back_populates="experiment")
-
-# Assignment relationships
-if not hasattr(Assignment, "experiment") or Assignment.experiment is None:
-    Assignment.experiment = relationship("Experiment", back_populates="assignments")
-
-if not hasattr(Assignment, "variant") or Assignment.variant is None:
-    Assignment.variant = relationship("Variant", back_populates="assignments")
-
-# Feature Flag relationships
-if not hasattr(FeatureFlag, "events") or FeatureFlag.events is None:
-    FeatureFlag.events = relationship("Event", back_populates="feature_flag")
-
-
-# Now configure all mappers
-configure_mappers()
-
-# All models for Alembic to discover
+# Explicitly list all models that should be part of the base metadata
 __all__ = [
     "Base",
     "BaseModel",
+    "BaseModelMixin",
     "User",
     "Role",
     "Permission",
     "Experiment",
     "Variant",
+    "Metric",
     "FeatureFlag",
     "FeatureFlagOverride",
-    "Assignment",
     "Event",
+    "Assignment",
+    "APIKey",
+    "user_role_association",
+    "role_permission_association",
     "ExperimentStatus",
     "ExperimentType",
-    "FeatureFlagStatus",
-    "Metric",
     "MetricType",
+    "FeatureFlagStatus",
+    "EventType",
 ]
+
+# Remove or comment out any premature configuration
+# configure_mappers()
