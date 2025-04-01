@@ -86,7 +86,9 @@ class Settings(BaseSettings):
         )
 
     @validator("SQLALCHEMY_DATABASE_URI", pre=True, allow_reuse=True)
-    def assemble_sqlalchemy_connection(cls, v: Optional[str], values: Dict[str, any]) -> any:
+    def assemble_sqlalchemy_connection(
+        cls, v: Optional[str], values: Dict[str, any]
+    ) -> any:
         """
         Assemble SQLAlchemy database connection string if not provided directly.
 
@@ -152,7 +154,9 @@ class DevSettings(Settings):
 
     # Project information
     PROJECT_NAME: str = "Experimentation Platform (Development)"
-    PROJECT_DESCRIPTION: str = "A platform for managing experiments and feature flags (Development Environment)"
+    PROJECT_DESCRIPTION: str = (
+        "A platform for managing experiments and feature flags (Development Environment)"
+    )
 
     # Override database settings for local development
     POSTGRES_SERVER: str = "localhost"
@@ -176,7 +180,9 @@ class TestSettings(Settings):
 
     # Project information
     PROJECT_NAME: str = "Experimentation Platform (Testing)"
-    PROJECT_DESCRIPTION: str = "A platform for managing experiments and feature flags (Test Environment)"
+    PROJECT_DESCRIPTION: str = (
+        "A platform for managing experiments and feature flags (Test Environment)"
+    )
 
     # Override database settings for testing
     POSTGRES_SERVER: str = "localhost"

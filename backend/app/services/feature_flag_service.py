@@ -99,13 +99,27 @@ class FeatureFlagService:
 
         Returns:
             Dictionary containing the created feature flag data
+
+        Raises:
+            ValueError: If a feature flag with the same key already exists
         """
-        obj_data = obj_in.dict()
+        # Check if feature flag with this key already exists
+        existing_flag = self.db.query(FeatureFlag).filter(FeatureFlag.key == obj_in.key).first()
+        if existing_flag:
+            raise ValueError(f"Feature flag with key '{obj_in.key}' already exists")
+
+        # obj_data = obj_in.dict()
+        obj_data = obj_in.dict(exclude={"value"})  # Exclude 'value' field
 
         # Set default values
         obj_data["owner_id"] = str(owner_id)
         if "status" not in obj_data or not obj_data["status"]:
             obj_data["status"] = FeatureFlagStatus.INACTIVE.value
+
+        # Optional: Handle 'value' field separately if needed
+        if hasattr(obj_in, "value") and obj_in.value:
+            # Map 'value' to some other field like 'variants' if needed
+            obj_data["variants"] = obj_in.value
 
         # Create feature flag
         flag = FeatureFlag(**obj_data)
@@ -381,8 +395,8 @@ class FeatureFlagService:
             "key": flag.key,
             "description": flag.description,
             "status": flag.status,
-            "percentage": flag.percentage,
-            "rules": flag.rules,
+            "rollout_percentage": flag.rollout_percentage,
+            "rules": flag.targeting_rules,
             "owner_id": str(flag.owner_id),
             "created_at": (
                 flag.created_at.isoformat()

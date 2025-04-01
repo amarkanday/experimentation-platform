@@ -15,6 +15,7 @@ from pydantic import (
     root_validator,
     UUID4,
     EmailStr,
+    SecretStr,
 )
 
 
@@ -33,7 +34,7 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     """Model for creating a new user."""
 
-    password: str = Field(..., min_length=8, description="User's password")
+    password: SecretStr = Field(..., min_length=8, description="User's password")
     is_active: bool = Field(True, description="Whether the user is active")
     is_superuser: bool = Field(False, description="Whether the user is a superuser")
 
@@ -50,17 +51,18 @@ class UserCreate(UserBase):
         }
 
     @validator("password")
-    def password_strength(cls, v):
+    def password_strength(cls, v: SecretStr):
         """Validate password strength."""
-        if len(v) < 8:
+        password = v.get_secret_value()
+        if len(password) < 8:
             raise ValueError("Password must be at least 8 characters long")
 
         # Check for at least one uppercase, one lowercase, and one digit
-        if not any(c.isupper() for c in v):
+        if not any(c.isupper() for c in password):
             raise ValueError("Password must contain at least one uppercase letter")
-        if not any(c.islower() for c in v):
+        if not any(c.islower() for c in password):
             raise ValueError("Password must contain at least one lowercase letter")
-        if not any(c.isdigit() for c in v):
+        if not any(c.isdigit() for c in password):
             raise ValueError("Password must contain at least one digit")
 
         return v
@@ -73,7 +75,7 @@ class UserUpdate(BaseModel):
     full_name: Optional[str] = Field(
         None, max_length=100, description="User's full name"
     )
-    password: Optional[str] = Field(None, min_length=8, description="User's password")
+    password: Optional[SecretStr] = Field(None, min_length=8, description="User's password")
     is_active: Optional[bool] = Field(None, description="Whether the user is active")
     is_superuser: Optional[bool] = Field(
         None, description="Whether the user is a superuser"
@@ -95,18 +97,19 @@ class UserUpdate(BaseModel):
         }
 
     @validator("password")
-    def password_strength(cls, v):
+    def password_strength(cls, v: Optional[SecretStr]):
         """Validate password strength if provided."""
         if v is not None:
-            if len(v) < 8:
+            password = v.get_secret_value()
+            if len(password) < 8:
                 raise ValueError("Password must be at least 8 characters long")
 
             # Check for at least one uppercase, one lowercase, and one digit
-            if not any(c.isupper() for c in v):
+            if not any(c.isupper() for c in password):
                 raise ValueError("Password must contain at least one uppercase letter")
-            if not any(c.islower() for c in v):
+            if not any(c.islower() for c in password):
                 raise ValueError("Password must contain at least one lowercase letter")
-            if not any(c.isdigit() for c in v):
+            if not any(c.isdigit() for c in password):
                 raise ValueError("Password must contain at least one digit")
 
         return v
@@ -115,8 +118,8 @@ class UserUpdate(BaseModel):
 class PasswordChange(BaseModel):
     """Model for changing a user's password."""
 
-    current_password: str = Field(..., description="Current password")
-    new_password: str = Field(..., min_length=8, description="New password")
+    current_password: SecretStr = Field(..., description="Current password")
+    new_password: SecretStr = Field(..., min_length=8, description="New password")
 
     class Config:
         schema_extra = {
@@ -127,17 +130,18 @@ class PasswordChange(BaseModel):
         }
 
     @validator("new_password")
-    def password_strength(cls, v):
+    def password_strength(cls, v: SecretStr):
         """Validate new password strength."""
-        if len(v) < 8:
+        password = v.get_secret_value()
+        if len(password) < 8:
             raise ValueError("Password must be at least 8 characters long")
 
         # Check for at least one uppercase, one lowercase, and one digit
-        if not any(c.isupper() for c in v):
+        if not any(c.isupper() for c in password):
             raise ValueError("Password must contain at least one uppercase letter")
-        if not any(c.islower() for c in v):
+        if not any(c.islower() for c in password):
             raise ValueError("Password must contain at least one lowercase letter")
-        if not any(c.isdigit() for c in v):
+        if not any(c.isdigit() for c in password):
             raise ValueError("Password must contain at least one digit")
 
         return v
