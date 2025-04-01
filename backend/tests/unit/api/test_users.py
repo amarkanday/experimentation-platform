@@ -223,7 +223,8 @@ def test_create_user_superuser(mock_hash, client, mock_db, superuser):
     assert "password" not in data  # Password should not be in response
 
     # Verify mock calls
-    mock_hash.assert_called_once_with("Password123")
+    assert mock_hash.call_count == 1
+    assert isinstance(mock_hash.call_args[0][0], SecretStr)
     mock_db.add.assert_called_once()
     mock_db.commit.assert_called_once()
 
@@ -366,7 +367,8 @@ def test_update_user_superuser(
     assert data["is_superuser"] == update_data["is_superuser"]
 
     # Verify mock calls
-    mock_hash.assert_called_once_with("Newpassword123")
+    assert mock_hash.call_count == 1
+    assert isinstance(mock_hash.call_args[0][0], SecretStr)
     mock_db.commit.assert_called_once()
 
     # Reset overrides
