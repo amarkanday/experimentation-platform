@@ -13,9 +13,9 @@ from enum import Enum
 class FeatureFlagStatus(str, Enum):
     """Feature flag status enum."""
 
-    ACTIVE = "active"
-    INACTIVE = "inactive"
-    ARCHIVED = "archived"
+    ACTIVE = "ACTIVE"
+    INACTIVE = "INACTIVE"
+    ARCHIVED = "ARCHIVED"
 
 
 class FeatureFlagBase(BaseModel):

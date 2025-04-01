@@ -1,11 +1,17 @@
-# models/experiment.py (modified)
+# backend/app/models/experiment.py
+"""
+Experiment-related database models for the experimentation platform.
+
+This module defines models for experiments, variants, and metrics.
+"""
+
 from sqlalchemy import (
     Column,
     String,
     Boolean,
     Integer,
     ForeignKey,
-    Enum,
+    Enum as SQLAEnum,
     Text,
     Index,
     CheckConstraint,
@@ -14,9 +20,12 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
+from sqlalchemy.ext.declarative import declared_attr
+
 from .base import Base, BaseModel
+from backend.app.core.database_config import get_schema_name
 import enum
-import uuid  # Import the uuid library
+import uuid
 
 
 class ExperimentStatus(enum.Enum):
@@ -53,23 +62,23 @@ class Experiment(Base, BaseModel):
 
     __tablename__ = "experiments"
 
-    # Add the id column
-    id = Column(UUID(as_uuid=True), primary_key=True, index=True) # Change this line
-
     name = Column(String(100), nullable=False)
     description = Column(Text)
     hypothesis = Column(Text)
     status = Column(
-        Enum(ExperimentStatus),
+        SQLAEnum(ExperimentStatus),
         default=ExperimentStatus.DRAFT,
         nullable=False,
         index=True,
     )
     experiment_type = Column(
-        Enum(ExperimentType), default=ExperimentType.A_B, nullable=False
+        SQLAEnum(ExperimentType),
+        default=ExperimentType.A_B,
+        nullable=False,
     )
     owner_id = Column(
-        UUID(as_uuid=True), ForeignKey("experimentation.users.id", ondelete="SET NULL")
+        UUID(as_uuid=True),
+        ForeignKey(f"{get_schema_name()}.users.id", ondelete="SET NULL"),
     )
     start_date = Column(DateTime)
     end_date = Column(DateTime)
@@ -77,68 +86,46 @@ class Experiment(Base, BaseModel):
     metrics = Column(JSONB)  # Metrics to track
     tags = Column(JSONB)  # For categorization
 
-    # Use string references for relationships to avoid import cycles
-    owner = relationship("User")
+    # Relationships
+    owner = relationship("User", back_populates="experiments")
     variants = relationship(
         "Variant", back_populates="experiment", cascade="all, delete-orphan"
     )
-    # Don't define the events and assignments relationships yet
     metric_definitions = relationship(
         "Metric", back_populates="experiment", cascade="all, delete-orphan"
     )
-
-    # Create indexes for faster querying
-    __table_args__ = (
-        # Composite index for finding active experiments within a date range
-        Index("idx_experiment_status_dates", status, start_date, end_date),
-        # Owner + status index for quickly finding a user's active experiments
-        Index("idx_experiment_owner_status", owner_id, status),
-        # Ensure end_date is after start_date
-        CheckConstraint(
-            "end_date IS NULL OR start_date IS NULL OR end_date > start_date",
-            name="check_experiment_dates",
-        ),
-        {"schema": "experimentation"},
+    events = relationship(
+        "Event", back_populates="experiment", cascade="all, delete-orphan"
     )
 
-
-class Metric(Base, BaseModel):
-    """Metric model for experiment measurements."""
-
-    __tablename__ = "metrics"
-
-    name = Column(String(100), nullable=False)
-    description = Column(Text)
-    event_name = Column(String(100), nullable=False, index=True)
-    metric_type = Column(
-        Enum(MetricType), default=MetricType.CONVERSION, nullable=False
-    )
-    is_primary = Column(Boolean, default=False)
-    aggregation_method = Column(
-        String(50), default="average"
-    )  # average, sum, unique, etc.
-    minimum_sample_size = Column(Integer, default=100)
-    expected_effect = Column(Float)  # Expected effect size for power calculations
-    event_value_path = Column(
-        String(100)
-    )  # JSON path to extract value from event payload
-    lower_is_better = Column(Boolean, default=False)
-    experiment_id = Column(
-        UUID(as_uuid=True),
-        ForeignKey("experimentation.experiments.id", ondelete="CASCADE"),
-        nullable=False,
+    # Add assignments relationship
+    assignments = relationship(
+        "Assignment", back_populates="experiment", cascade="all, delete-orphan"
     )
 
-    # Relationships
-    experiment = relationship("Experiment", back_populates="metric_definitions")
+    @declared_attr
+    def __table_args__(cls):
+        schema_name = get_schema_name()
+        return (
+            # Composite index for finding active experiments within a date range
+            Index(
+                f"{schema_name}_experiment_status_dates",
+                "status",
+                "start_date",
+                "end_date",
+            ),
+            # Owner + status index for quickly finding a user's active experiments
+            Index(f"{schema_name}_experiment_owner_status", "owner_id", "status"),
+            # Ensure end_date is after start_date
+            CheckConstraint(
+                "end_date IS NULL OR start_date IS NULL OR end_date > start_date",
+                name="check_experiment_dates",
+            ),
+            {"schema": schema_name},
+        )
 
-    __table_args__ = (
-        # Composite index for experiment + event
-        Index("idx_metric_experiment_event", experiment_id, event_name),
-        # Ensure unique metric names within an experiment
-        Index("idx_metric_experiment_name", experiment_id, name, unique=True),
-        {"schema": "experimentation"},
-    )
+    def __repr__(self):
+        return f"<Experiment {self.name}>"
 
 
 class Variant(Base, BaseModel):
@@ -148,7 +135,7 @@ class Variant(Base, BaseModel):
 
     experiment_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("experimentation.experiments.id", ondelete="CASCADE"),
+        ForeignKey(f"{get_schema_name()}.experiments.id", ondelete="CASCADE"),
         nullable=False,
     )
     name = Column(String(100), nullable=False)
@@ -159,16 +146,79 @@ class Variant(Base, BaseModel):
 
     # Relationships
     experiment = relationship("Experiment", back_populates="variants")
-    # Use a string reference for the assignment relationship
-    # assignments = relationship("Assignment")
-
-    __table_args__ = (
-        # Composite index for quickly finding variants of an experiment
-        Index("idx_variant_experiment", experiment_id),
-        # Check that traffic allocation is between 0 and 100
-        CheckConstraint(
-            "traffic_allocation >= 0 AND traffic_allocation <= 100",
-            name="check_traffic_allocation",
-        ),
-        {"schema": "experimentation"},
+    assignments = relationship(
+        "Assignment", back_populates="variant", cascade="all, delete-orphan"
     )
+    # Add events relationship
+    events = relationship(
+        "Event", back_populates="variant", cascade="all, delete-orphan"
+    )
+    # Ensure assignments relationship is properly defined
+    assignments = relationship(
+        "Assignment", back_populates="variant", cascade="all, delete-orphan"
+    )
+
+    @declared_attr
+    def __table_args__(cls):
+        schema_name = get_schema_name()
+        return (
+            # Composite index for quickly finding variants of an experiment
+            Index(f"{schema_name}_variant_experiment", "experiment_id"),
+            # Check that traffic allocation is between 0 and 100
+            CheckConstraint(
+                "traffic_allocation >= 0 AND traffic_allocation <= 100",
+                name="check_traffic_allocation",
+            ),
+            {"schema": schema_name},
+        )
+
+    def __repr__(self):
+        return f"<Variant {self.name}>"
+
+
+class Metric(Base, BaseModel):
+    """Metric model for experiment measurements."""
+
+    __tablename__ = "metrics"
+
+    experiment_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey(f"{get_schema_name()}.experiments.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    name = Column(String(100), nullable=False)
+    description = Column(Text)
+    event_name = Column(String(100), nullable=False, index=True)
+    metric_type = Column(
+        SQLAEnum(MetricType), default=MetricType.CONVERSION, nullable=False
+    )
+    is_primary = Column(Boolean, default=False)
+    aggregation_method = Column(String(50), default="average")
+    minimum_sample_size = Column(Integer, default=100)
+    expected_effect = Column(Float)
+    event_value_path = Column(String(100))
+    lower_is_better = Column(Boolean, default=False)
+
+    # Relationships
+    experiment = relationship("Experiment", back_populates="metric_definitions")
+
+    @declared_attr
+    def __table_args__(cls):
+        schema_name = get_schema_name()
+        return (
+            # Composite index for experiment + event
+            Index(
+                f"{schema_name}_metric_experiment_event", "experiment_id", "event_name"
+            ),
+            # Ensure unique metric names within an experiment
+            Index(
+                f"{schema_name}_metric_experiment_name",
+                "experiment_id",
+                "name",
+                unique=True,
+            ),
+            {"schema": schema_name},
+        )
+
+    def __repr__(self):
+        return f"<Metric {self.name}>"

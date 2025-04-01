@@ -1,20 +1,28 @@
 # backend/app/models/base.py
 from datetime import datetime
 import uuid
-from sqlalchemy import Column, DateTime, String
+from sqlalchemy import Column, DateTime, String, MetaData
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.ext.declarative import declared_attr
-
 from sqlalchemy.orm import configure_mappers
+from backend.app.core.database_config import get_schema_name
 
-# configure_mappers()
+# Create metadata with schema
+metadata = MetaData()
 
-Base = declarative_base()
+# Create base with metadata
+Base = declarative_base(metadata=metadata)
 
+# Configure schema for all tables
+@declared_attr
+def __table_args__(cls):
+    """Set schema for all tables."""
+    return {'schema': get_schema_name()}
+
+Base.__table_args__ = __table_args__
 
 class BaseModel:
-    # __abstract__ = True
     """
     Abstract base model for common columns and methods.
     This is a mixin, not a table itself.

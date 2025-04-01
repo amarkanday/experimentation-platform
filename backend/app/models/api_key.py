@@ -11,8 +11,11 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
+from sqlalchemy.ext.declarative import declared_attr
 from sqlalchemy.sql import func
+
 from .base import Base, BaseModel
+from backend.app.core.database_config import get_schema_name
 
 
 def generate_api_key() -> str:
@@ -42,12 +45,16 @@ class APIKey(Base, BaseModel):
     # User relationship
     user_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("experimentation.users.id", ondelete="CASCADE"),
+        ForeignKey(f"{get_schema_name()}.users.id", ondelete="CASCADE"),
         nullable=False,
     )
+
+    # Relationship with explicit back_populates
     user = relationship("User", back_populates="api_keys")
 
-    __table_args__ = ({"schema": "experimentation"},)
+    @declared_attr
+    def __table_args__(cls):
+        return ({"schema": get_schema_name()},)
 
     def __repr__(self):
         return f"<APIKey {self.name} ({self.key[:8]}...)>"

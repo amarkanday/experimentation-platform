@@ -11,6 +11,7 @@ from backend.app.models.user import User
 from backend.app.models.experiment import Experiment
 from backend.app.services.auth_service import auth_service
 from loguru import logger
+from backend.app.models.api_key import APIKey
 
 # Try to import Redis, handle gracefully if not installed
 try:
@@ -257,12 +258,25 @@ def get_api_key(
             headers={"WWW-Authenticate": "APIKey"},
         )
 
-    # Just return validation failure for now until the API key model is implemented
-    raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Invalid API Key",
-        headers={"WWW-Authenticate": "APIKey"},
-    )
+    # Get API key from database
+    api_key = db.query(APIKey).filter(APIKey.key == api_key_header).first()
+    if not api_key or not api_key.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid API Key",
+            headers={"WWW-Authenticate": "APIKey"},
+        )
+
+    # Get associated user
+    user = db.query(User).filter(User.id == api_key.user_id).first()
+    if not user or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid API Key",
+            headers={"WWW-Authenticate": "APIKey"},
+        )
+
+    return user
 
 
 def get_experiment_by_key(

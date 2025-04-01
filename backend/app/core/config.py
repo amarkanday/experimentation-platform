@@ -1,201 +1,232 @@
-# core/config.py
-# config.py
 """
-Configuration settings for the experimentation platform.
+Application settings and configuration.
 
-This module defines settings classes using Pydantic for type validation
-and environment-based configuration management.
+This module defines settings for the application based on environment variables
+and sensible defaults.
 """
 
 import os
 import secrets
-from typing import Any, Dict, List, Optional, Union
-from pydantic import AnyHttpUrl, PostgresDsn, validator, EmailStr
-from pydantic import BaseSettings
+from typing import Dict, List, Union, Optional
+from pydantic import BaseSettings, PostgresDsn, validator, AnyHttpUrl
 
 
 class Settings(BaseSettings):
-    """Base settings class with common configuration for all environments."""
+    """Base settings class."""
 
-    # API settings
-    API_V1_STR: str = "/api/v1"
+    # API configuration
+    API_V1_STR: str = "/api"
     SECRET_KEY: str = secrets.token_urlsafe(32)
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8  # 8 days
+    PROJECT_NAME: str = "Experimentation Platform"
+    PROJECT_DESCRIPTION: str = "A platform for managing experiments and feature flags"
+    PROJECT_VERSION: str = "1.0.0"
 
     # CORS settings
-    BACKEND_CORS_ORIGINS: List[AnyHttpUrl] = []
+    CORS_ORIGINS: List[AnyHttpUrl] = []
 
-    @validator("BACKEND_CORS_ORIGINS", pre=True, allow_reuse=True)
-    def assemble_cors_origins(cls, v: Union[str, List[str]]) -> Union[List[str], str]:
-        if isinstance(v, str) and not v.startswith("["):
-            return [i.strip() for i in v.split(",")]
-        elif isinstance(v, (list, str)):
-            return v
-        raise ValueError(v)
-
-    # function implementation...
-
-    # Database settings
+    # Database configuration
     POSTGRES_SERVER: str = "localhost"
     POSTGRES_USER: str = "postgres"
     POSTGRES_PASSWORD: str = "postgres"
     POSTGRES_DB: str = "experimentation"
-    POSTGRES_PORT: int = 5432
-    POSTGRES_SCHEMA: str = "experimentation"
+    POSTGRES_PORT: str = "5432"
+    DATABASE_URI: Optional[PostgresDsn] = None
     SQLALCHEMY_DATABASE_URI: Optional[PostgresDsn] = None
-    DATABASE_URI: Optional[PostgresDsn] = None  # Alias for backward compatibility
-    # Add to backend/app/core/config.py
-    SERVER_URL: str = "http://localhost:8000"
 
-    @validator("SQLALCHEMY_DATABASE_URI", pre=True, allow_reuse=True)
-    def assemble_db_connection(cls, v: Optional[str], values: Dict[str, Any]) -> Any:
-        """Build database URI from components."""
+    # Redis configuration (optional)
+    REDIS_HOST: str = "localhost"
+    REDIS_PORT: int = 6379
+    REDIS_DB: int = 0
+    REDIS_PREFIX: str = "expt"
+    CACHE_ENABLED: bool = False
+
+    # Environment
+    ENVIRONMENT: str = "dev"
+
+    # Authentication
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8  # 8 days
+    ALGORITHM: str = "HS256"
+
+    # Elasticsearch configuration (optional)
+    ELASTICSEARCH_HOST: Optional[str] = None
+    ELASTICSEARCH_PORT: int = 9200
+    ELASTICSEARCH_USERNAME: Optional[str] = None
+    ELASTICSEARCH_PASSWORD: Optional[str] = None
+
+    # AWS configuration (optional)
+    AWS_REGION: str = "us-east-1"
+    COGNITO_USER_POOL_ID: Optional[str] = None
+    COGNITO_CLIENT_ID: Optional[str] = None
+
+    # Logging configuration
+    LOG_LEVEL: str = "INFO"
+
+    @validator("DATABASE_URI", pre=True, allow_reuse=True)
+    def assemble_db_connection(cls, v: Optional[str], values: Dict[str, any]) -> any:
+        """
+        Assemble database connection string if not provided directly.
+
+        Args:
+            v: Optional provided DATABASE_URI
+            values: Other setting values
+
+        Returns:
+            Assembled database URI
+        """
         if isinstance(v, str):
             return v
 
-        # Get component values safely
-        postgres_server = values.get("POSTGRES_SERVER", "localhost")
-        postgres_user = values.get("POSTGRES_USER", "postgres")
-        postgres_password = values.get("POSTGRES_PASSWORD", "postgres")
-        postgres_port = values.get("POSTGRES_PORT", 5432)
-        postgres_db = values.get("POSTGRES_DB", "experimentation")
-
-        # Convert port to int if it's a string
-        if isinstance(postgres_port, str) and postgres_port.isdigit():
-            postgres_port = int(postgres_port)
-
-        # Build the PostgreSQL DSN
         return PostgresDsn.build(
             scheme="postgresql",
-            user=postgres_user,
-            password=postgres_password,
-            host=postgres_server,
-            port=str(postgres_port),  # Port needs to be a string for Pydantic v1
-            path=f"/{postgres_db or ''}",
+            user=values.get("POSTGRES_USER"),
+            password=values.get("POSTGRES_PASSWORD"),
+            host=values.get("POSTGRES_SERVER"),
+            port=values.get("POSTGRES_PORT"),
+            path=f"/{values.get('POSTGRES_DB') or ''}",
         )
 
-    # Redis settings
-    REDIS_HOST: str = "localhost"
-    REDIS_PORT: int = 6379
-    REDIS_PASSWORD: Optional[str] = None
-    REDIS_DB: int = 0
+    @validator("SQLALCHEMY_DATABASE_URI", pre=True, allow_reuse=True)
+    def assemble_sqlalchemy_connection(
+        cls, v: Optional[str], values: Dict[str, any]
+    ) -> any:
+        """
+        Assemble SQLAlchemy database connection string if not provided directly.
 
-    # Application settings
-    PROJECT_NAME: str = "Experimentation Platform"
-    VERSION: str = "0.1.0"
-    DESCRIPTION: str = "A platform for managing experiments and feature flags"
-    ENVIRONMENT: str = "dev"
-    DEBUG: bool = True
-    LOG_LEVEL: str = "INFO"
+        Args:
+            v: Optional provided SQLALCHEMY_DATABASE_URI
+            values: Other setting values
 
-    # AWS settings - optional
-    AWS_REGION: str = "us-west-2"
-    AWS_ACCESS_KEY_ID: Optional[str] = None
-    AWS_SECRET_ACCESS_KEY: Optional[str] = None
+        Returns:
+            Assembled database URI
+        """
+        if isinstance(v, str):
+            return v
 
-    # Admin user settings
-    FIRST_SUPERUSER_EMAIL: Optional[EmailStr] = None
-    FIRST_SUPERUSER_PASSWORD: Optional[str] = None
+        # If DATABASE_URI is set, use that
+        database_uri = values.get("DATABASE_URI")
+        if database_uri:
+            return database_uri
 
-    # Performance settings
-    DB_POOL_SIZE: int = 5
-    DB_MAX_OVERFLOW: int = 10
-    DB_POOL_TIMEOUT: int = 30
-    DB_POOL_RECYCLE: int = 1800  # 30 minutes
-    DB_ECHO_LOG: bool = False
+        # Otherwise build from components
+        return PostgresDsn.build(
+            scheme="postgresql",
+            user=values.get("POSTGRES_USER"),
+            password=values.get("POSTGRES_PASSWORD"),
+            host=values.get("POSTGRES_SERVER"),
+            port=values.get("POSTGRES_PORT"),
+            path=f"/{values.get('POSTGRES_DB') or ''}",
+        )
 
-    # Feature flag evaluation settings
-    FEATURE_FLAG_CACHE_TTL: int = 300  # 5 minutes
+    @validator("CORS_ORIGINS", pre=True, allow_reuse=True)
+    def assemble_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:
+        """
+        Parse CORS origins from string or list.
+
+        Args:
+            v: String or list of CORS origins
+
+        Returns:
+            List of allowed origins
+        """
+        if isinstance(v, str) and not v.startswith("["):
+            return [i.strip() for i in v.split(",")]
+
+        if isinstance(v, (list, str)):
+            return v
+
+        raise ValueError(v)
 
     class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        case_sensitive = True
+        """Pydantic config."""
 
-    def __init__(self, **data: Any) -> None:
-        """Initialize settings."""
-        super().__init__(**data)
-        # Ensure DATABASE_URI is set for backward compatibility
-        if self.SQLALCHEMY_DATABASE_URI and not self.DATABASE_URI:
-            self.DATABASE_URI = self.SQLALCHEMY_DATABASE_URI
+        case_sensitive = True
+        env_file = ".env"
 
 
 class DevSettings(Settings):
     """Development environment settings."""
 
+    # Add development-specific settings
+    ENVIRONMENT: str = "dev"
     LOG_LEVEL: str = "DEBUG"
-    DEBUG: bool = True
-    DB_ECHO_LOG: bool = True
+    CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:8000"]
+    CACHE_ENABLED: bool = False
 
-    # Faster pool recycling in development
-    DB_POOL_RECYCLE: int = 300  # 5 minutes
+    # Project information
+    PROJECT_NAME: str = "Experimentation Platform (Development)"
+    PROJECT_DESCRIPTION: str = (
+        "A platform for managing experiments and feature flags (Development Environment)"
+    )
 
-    # Shorter cache TTL for faster feedback
-    FEATURE_FLAG_CACHE_TTL: int = 60  # 1 minute
+    # Override database settings for local development
+    POSTGRES_SERVER: str = "localhost"
+    POSTGRES_USER: str = "postgres"
+    POSTGRES_PASSWORD: str = "postgres"
+    POSTGRES_DB: str = "experimentation"
 
     class Config:
+        """Pydantic config for development."""
+
         env_file = ".env.dev"
-        env_file_encoding = "utf-8"
-        case_sensitive = True
 
 
 class TestSettings(Settings):
-    """Testing environment settings."""
+    """Test environment settings."""
 
-    POSTGRES_DB: str = "test_db"
+    # Add test-specific settings
+    ENVIRONMENT: str = "test"
     TESTING: bool = True
-    DEBUG: bool = True
     LOG_LEVEL: str = "DEBUG"
 
-    # Smaller pool for testing
-    DB_POOL_SIZE: int = 2
+    # Project information
+    PROJECT_NAME: str = "Experimentation Platform (Testing)"
+    PROJECT_DESCRIPTION: str = (
+        "A platform for managing experiments and feature flags (Test Environment)"
+    )
 
-    # No caching in tests
-    FEATURE_FLAG_CACHE_TTL: int = 0
+    # Override database settings for testing
+    POSTGRES_SERVER: str = "localhost"
+    POSTGRES_USER: str = "postgres"
+    POSTGRES_PASSWORD: str = "postgres"
+    POSTGRES_DB: str = "test_experimentation"
 
     class Config:
+        """Pydantic config for testing."""
+
         env_file = ".env.test"
-        env_file_encoding = "utf-8"
-        case_sensitive = True
 
 
 class ProdSettings(Settings):
     """Production environment settings."""
 
-    SECRET_KEY: str
-    LOG_LEVEL: str = "WARNING"
-    DEBUG: bool = False
+    # Add production-specific settings
     ENVIRONMENT: str = "prod"
 
-    # Larger pool for production
-    DB_POOL_SIZE: int = 10
-    DB_MAX_OVERFLOW: int = 20
+    # Project information
+    PROJECT_NAME: str = "Experimentation Platform"
+    PROJECT_DESCRIPTION: str = "A platform for managing experiments and feature flags"
 
-    # Longer cache TTL for better performance
-    FEATURE_FLAG_CACHE_TTL: int = 600  # 10 minutes
+    # Enable caching in production
+    CACHE_ENABLED: bool = True
+
+    # More strict security in production
+    CORS_ORIGINS: List[str] = ["https://app.example.com"]
 
     class Config:
+        """Pydantic config for production."""
+
         env_file = ".env.prod"
-        env_file_encoding = "utf-8"
-        case_sensitive = True
 
 
-def get_settings() -> Settings:
-    """
-    Get settings for the current environment.
+# Select settings based on environment
+environment = os.getenv("APP_ENV", "dev").lower()
 
-    Returns:
-        Settings: Environment-specific settings object
-    """
-    environment = os.getenv("ENVIRONMENT", "dev").lower()
+if environment == "prod":
+    settings = ProdSettings()
+elif environment == "test":
+    settings = TestSettings()
+else:
+    settings = DevSettings()
 
-    if environment == "prod":
-        return ProdSettings()
-    elif environment == "test":
-        return TestSettings()
-    else:
-        return DevSettings()
-
-
-# Create a global settings instance
-settings = get_settings()
+# Make settings accessible at module level
+__all__ = ["settings", "Settings", "DevSettings", "TestSettings", "ProdSettings"]
