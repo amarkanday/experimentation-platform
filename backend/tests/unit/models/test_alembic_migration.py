@@ -86,28 +86,55 @@ def clean_test_database(test_db_url):
 
     # Drop and recreate test database
     try:
-        conn.execute(text(f"DROP DATABASE IF EXISTS {db_name}"))
+        # Force close all connections to the test database
+        conn.execute(text("""
+            SELECT pg_terminate_backend(pg_stat_activity.pid)
+            FROM pg_stat_activity
+            WHERE pg_stat_activity.datname = :db_name
+            AND pid <> pg_backend_pid()
+        """), {"db_name": db_name})
         conn.execute(text("COMMIT"))
+
+        # Now drop and recreate the database
+        conn.execute(text(f"DROP DATABASE IF EXISTS {db_name}"))
         conn.execute(text(f"CREATE DATABASE {db_name}"))
         conn.execute(text("COMMIT"))
+
+        # Create engine for test database
+        test_engine = create_engine(test_db_url)
+        with test_engine.connect() as test_conn:
+            # Create schema
+            test_conn.execute(text("CREATE SCHEMA IF NOT EXISTS test_experimentation"))
+            test_conn.execute(text("COMMIT"))
+
+            # Set search path
+            test_conn.execute(text("SET search_path TO test_experimentation"))
+            test_conn.execute(text("COMMIT"))
+
+        yield test_engine
+
+        # Cleanup after all tests
+        test_engine.dispose()
+        with engine.connect() as conn:
+            conn.execute(text("COMMIT"))
+
+            # Force close all connections again before final cleanup
+            conn.execute(text("""
+                SELECT pg_terminate_backend(pg_stat_activity.pid)
+                FROM pg_stat_activity
+                WHERE pg_stat_activity.datname = :db_name
+                AND pid <> pg_backend_pid()
+            """), {"db_name": db_name})
+            conn.execute(text("COMMIT"))
+
+            conn.execute(text(f"DROP DATABASE IF EXISTS {db_name}"))
+            conn.execute(text("COMMIT"))
+
     except Exception as e:
-        logger.error(f"Error setting up test database: {e}")
+        print(f"Error setting up test database: {e}")
         raise
     finally:
-        conn.close()
         engine.dispose()
-
-    # Connect to the clean test database and create schema
-    engine = create_engine(test_db_url)
-    with engine.connect() as conn:
-        conn.execute(text("COMMIT"))
-        conn.execute(text("CREATE SCHEMA IF NOT EXISTS experimentation"))
-        conn.execute(text("COMMIT"))
-
-    yield engine
-
-    # Cleanup after tests
-    engine.dispose()
 
 
 def test_migrations_apply_cleanly(alembic_config, clean_test_database):

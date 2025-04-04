@@ -8,11 +8,11 @@ for the application.
 import os
 from typing import Generator
 from urllib.parse import urlparse
-from sqlalchemy import create_engine, MetaData
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from backend.app.core.config import settings
+from backend.app.models.base import Base
 
 # Check for DATABASE_URI environment variable, otherwise use settings
 database_uri = os.getenv("DATABASE_URI")
@@ -27,13 +27,6 @@ if not database_uri:
     else:
         database_uri = f"postgresql://{settings.POSTGRES_USER}:{settings.POSTGRES_PASSWORD}@{settings.POSTGRES_SERVER}:{settings.POSTGRES_PORT}/{settings.POSTGRES_DB}"
 
-# Parse the database URI to get the schema
-parsed = urlparse(database_uri)
-db_schema = "experimentation"
-
-# Configure metadata with schema
-metadata = MetaData(schema=db_schema)
-
 # Create engine with appropriate configuration
 engine = create_engine(
     database_uri,
@@ -45,9 +38,6 @@ engine = create_engine(
 
 # Session factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-# Base class for SQLAlchemy models
-Base = declarative_base(metadata=metadata)
 
 
 async def get_db() -> Generator:

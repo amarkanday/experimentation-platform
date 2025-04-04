@@ -22,12 +22,13 @@ class CognitoAuthService:
         # Load configuration from environment variables
         self.user_pool_id = os.environ.get("COGNITO_USER_POOL_ID")
         self.client_id = os.environ.get("COGNITO_CLIENT_ID")
+        self.region = os.environ.get("AWS_REGION", "us-east-1")
 
         if not self.user_pool_id or not self.client_id:
             logger.warning("COGNITO_USER_POOL_ID or COGNITO_CLIENT_ID not set")
 
         # Initialize Cognito Identity Provider client
-        self.client = boto3.client("cognito-idp")
+        self.client = boto3.client("cognito-idp", region_name=self.region)
 
     def sign_up(
         self,

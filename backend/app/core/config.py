@@ -173,22 +173,12 @@ class DevSettings(Settings):
 class TestSettings(Settings):
     """Test environment settings."""
 
-    # Add test-specific settings
-    ENVIRONMENT: str = "test"
+    ENV: str = "test"
     TESTING: bool = True
     LOG_LEVEL: str = "DEBUG"
-
-    # Project information
-    PROJECT_NAME: str = "Experimentation Platform (Testing)"
-    PROJECT_DESCRIPTION: str = (
-        "A platform for managing experiments and feature flags (Test Environment)"
-    )
-
-    # Override database settings for testing
-    POSTGRES_SERVER: str = "localhost"
-    POSTGRES_USER: str = "postgres"
-    POSTGRES_PASSWORD: str = "postgres"
-    POSTGRES_DB: str = "test_experimentation"
+    PROJECT_NAME: str = "Experimentation Platform"
+    PROJECT_DESCRIPTION: str = "API for managing experiments and feature flags in test environment"
+    POSTGRES_DB: str = "experimentation"
 
     class Config:
         """Pydantic config for testing."""
