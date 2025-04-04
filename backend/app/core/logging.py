@@ -6,12 +6,15 @@ This module configures structured JSON logging with proper rotation and context.
 
 import json
 import logging
+import os
 import sys
 from logging.handlers import RotatingFileHandler
 from pythonjsonlogger import jsonlogger
 from typing import Dict, Any, Optional
 import uuid
 from datetime import datetime
+import watchtower
+import boto3
 
 # Configure JSON formatter
 class CustomJsonFormatter(jsonlogger.JsonFormatter):
@@ -53,11 +56,15 @@ class CustomJsonFormatter(jsonlogger.JsonFormatter):
         if hasattr(record, 'session_id'):
             log_record['session_id'] = record.session_id
 
+        # Add environment
+        log_record['environment'] = os.getenv('APP_ENV', 'development')
+
 def setup_logging(
     log_level: str = "INFO",
     log_file: str = "app.log",
     max_bytes: int = 10 * 1024 * 1024,  # 10MB
-    backup_count: int = 5
+    backup_count: int = 5,
+    enable_cloudwatch: bool = True
 ) -> None:
     """
     Set up logging configuration.
@@ -67,6 +74,7 @@ def setup_logging(
         log_file: Path to the log file
         max_bytes: Maximum size of each log file before rotation
         backup_count: Number of backup files to keep
+        enable_cloudwatch: Whether to enable CloudWatch logging
     """
     # Create formatter
     formatter = CustomJsonFormatter(
@@ -90,6 +98,43 @@ def setup_logging(
     root_logger.setLevel(log_level)
     root_logger.addHandler(console_handler)
     root_logger.addHandler(file_handler)
+
+    # Add CloudWatch handler if enabled
+    if enable_cloudwatch and os.getenv('AWS_ACCESS_KEY_ID'):
+        try:
+            # Get environment and region
+            env = os.getenv('APP_ENV', 'development')
+            region = os.getenv('AWS_REGION', 'us-east-1')
+
+            # Create CloudWatch client
+            cloudwatch = boto3.client('logs', region_name=region)
+
+            # Create CloudWatch handler with batching
+            cloudwatch_handler = watchtower.CloudWatchLogHandler(
+                log_group=f"/experimentation-platform/{env}",
+                stream_name=datetime.utcnow().strftime("%Y/%m/%d"),
+                boto3_client=cloudwatch,
+                batch_count=100,  # Number of logs to batch
+                batch_timeout=5,   # Seconds to wait before sending batch
+                create_log_group=True
+            )
+            cloudwatch_handler.setFormatter(formatter)
+            root_logger.addHandler(cloudwatch_handler)
+
+            # Log successful CloudWatch setup
+            root_logger.info(
+                "CloudWatch logging enabled",
+                extra={
+                    "log_group": f"/experimentation-platform/{env}",
+                    "region": region
+                }
+            )
+        except Exception as e:
+            root_logger.error(
+                "Failed to set up CloudWatch logging",
+                exc_info=True,
+                extra={"error": str(e)}
+            )
 
     # Configure third-party loggers
     logging.getLogger("uvicorn").setLevel(log_level)
