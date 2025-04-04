@@ -9,18 +9,10 @@ from sqlalchemy.orm import configure_mappers
 from backend.app.core.database_config import get_schema_name
 
 # Create metadata with schema
-metadata = MetaData()
+metadata = MetaData(schema=get_schema_name())
 
 # Create base with metadata
 Base = declarative_base(metadata=metadata)
-
-# Configure schema for all tables
-@declared_attr
-def __table_args__(cls):
-    """Set schema for all tables."""
-    return {'schema': get_schema_name()}
-
-Base.__table_args__ = __table_args__
 
 class BaseModel:
     """

@@ -11,13 +11,14 @@ if project_root not in sys.path:
 # Now test imports will work correctly
 from fastapi.testclient import TestClient
 from backend.app.main import app
+from backend.app.core.config import settings
 
 
 # Simple test function that doesn't require any fixtures
 def test_app_exists():
     """Test that the FastAPI app exists and is properly initialized."""
     assert app is not None
-    assert app.title == "Experimentation Platform"
+    assert app.title == settings.PROJECT_NAME
 
 
 # Test using the TestClient

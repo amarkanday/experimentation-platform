@@ -32,6 +32,7 @@ from backend.app.models import (
     FeatureFlagStatus,
     user_role_association,
 )
+from backend.app.core.database_config import get_schema_name
 
 # Add missing relationships for User-Role
 # These won't persist beyond this test run, but they'll allow the tests to pass
@@ -123,23 +124,25 @@ def test_model_schema_configuration():
         Event,
     ]
 
+    expected_schema = get_schema_name()
+
     for model in models:
         table_args = getattr(model, "__table_args__", None)
         assert table_args is not None, f"{model.__name__} does not have __table_args__"
 
         if isinstance(table_args, dict):
             assert (
-                table_args.get("schema") == "experimentation"
-            ), f"{model.__name__} does not have 'experimentation' schema"
+                table_args.get("schema") == expected_schema
+            ), f"{model.__name__} does not have '{expected_schema}' schema"
         else:
             schema_found = False
             for arg in table_args:
-                if isinstance(arg, dict) and arg.get("schema") == "experimentation":
+                if isinstance(arg, dict) and arg.get("schema") == expected_schema:
                     schema_found = True
                     break
             assert (
                 schema_found
-            ), f"{model.__name__} does not have 'experimentation' schema in __table_args__"
+            ), f"{model.__name__} does not have '{expected_schema}' schema in __table_args__"
 
 
 def test_experiment_model_structure():
@@ -193,6 +196,7 @@ def test_variant_model_structure():
     """Test that Variant model has the required structure."""
     inspector = inspect(Variant)
     columns = [column.name for column in inspector.columns]
+    expected_schema = get_schema_name()
 
     required_columns = ["experiment_id", "name", "is_control", "traffic_allocation"]
 
@@ -203,7 +207,7 @@ def test_variant_model_structure():
     # Access foreign keys from the table object instead of the mapper
     fks = [fk.target_fullname for fk in Variant.__table__.foreign_keys]
     assert (
-        "experimentation.experiments.id" in fks
+        f"{expected_schema}.experiments.id" in fks
     ), "Variant should have a foreign key to experiments table"
 
 
@@ -223,69 +227,6 @@ def test_role_has_users_relationship():
 
 
 # ============== Model Relationship Tests ==============
-
-
-@pytest.fixture(scope="module")
-def db_session():
-    """Set up database for testing relationships."""
-    # Use PostgreSQL instead of SQLite to handle JSON columns properly
-    db_url = os.environ.get(
-        "TEST_DATABASE_URL",
-        "postgresql://postgres:postgres@localhost:5432/experimentation_test_models",
-    )
-
-    # Create the test database
-    try:
-        temp_engine = create_engine(
-            db_url.replace("experimentation_test_models", "postgres")
-        )
-        with temp_engine.connect() as conn:
-            conn.execute(text("COMMIT"))
-            conn.execute(text("DROP DATABASE IF EXISTS experimentation_test_models"))
-            conn.execute(text("CREATE DATABASE experimentation_test_models"))
-        temp_engine.dispose()
-
-        # Connect to the test database
-        engine = create_engine(db_url)
-        with engine.connect() as conn:
-            conn.execute(text("COMMIT"))
-            conn.execute(text("CREATE SCHEMA IF NOT EXISTS experimentation"))
-
-        # Create session
-        Session = sessionmaker(bind=engine)
-
-        # Create all tables in the engine
-        Base.metadata.create_all(engine)
-
-        # Create a session
-        session = Session()
-
-        yield session
-
-        # Clean up
-        session.close()
-        Base.metadata.drop_all(engine)
-        engine.dispose()
-    except Exception as e:
-        # In case of database connection issues, fall back to SQLite in-memory
-        logger.warning(
-            f"PostgreSQL connection failed ({str(e)}), falling back to SQLite"
-        )
-        engine = create_engine("sqlite:///:memory:")
-        Session = sessionmaker(bind=engine)
-
-        # Create all tables in the engine
-        Base.metadata.create_all(engine)
-
-        # Create a session
-        session = Session()
-
-        yield session
-
-        # Clean up
-        session.close()
-        Base.metadata.drop_all(engine)
-        clear_mappers()
 
 
 def test_user_role_relationship(db_session):
