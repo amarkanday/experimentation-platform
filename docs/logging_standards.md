@@ -1,7 +1,7 @@
 # Logging Standards and Best Practices
 
 ## Overview
-This document outlines the logging standards and best practices for the experimentation platform. All logs are structured in JSON format for better searchability and analysis.
+This document outlines the logging standards and best practices for the experimentation platform. All logs are structured in JSON format for better searchability and analysis, and are delivered to CloudWatch for centralized management.
 
 ## Log Format
 
@@ -110,9 +110,36 @@ logger.info("User authenticated", extra={
 - Log volume and patterns are analyzed for trends
 
 ## Tools and Integration
-- Logs are integrated with monitoring tools
-- JSON format enables easy parsing and analysis
-- Log aggregation for centralized viewing
+
+### CloudWatch Integration
+All logs are automatically sent to AWS CloudWatch with the following structure:
+- Log Group: `/experimentation-platform/{environment}`
+- Log Streams: Organized by date (YYYY/MM/DD)
+- Retention: Varies by log type (30-365 days)
+
+#### Log Delivery
+- Logs are batched (100 logs or 5 seconds)
+- Automatic retry on delivery failure
+- Asynchronous delivery to minimize impact
+
+#### Environment-specific Configuration
+```python
+# Enable CloudWatch logging
+setup_logging(
+    log_level="INFO",
+    enable_cloudwatch=True  # Defaults to True if AWS credentials are available
+)
+```
+
+#### Required Environment Variables
+```bash
+AWS_ACCESS_KEY_ID=your_access_key
+AWS_SECRET_ACCESS_KEY=your_secret_key
+AWS_REGION=your_region
+APP_ENV=development|staging|production
+```
+
+For detailed CloudWatch setup and configuration, see [CloudWatch Setup Guide](infrastructure/cloudwatch-setup.md).
 
 ## Examples
 
