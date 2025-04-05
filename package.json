@@ -1,0 +1,23 @@
+{
+  "name": "experimentation-platform",
+  "version": "1.0.0",
+  "description": "A scalable, AWS-based platform for A/B testing and feature flags with real-time evaluation capabilities.",
+  "homepage": "https://github.com/amarkanday/experimentation-platform#readme",
+  "bugs": {
+    "url": "https://github.com/amarkanday/experimentation-platform/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/amarkanday/experimentation-platform.git"
+  },
+  "license": "ISC",
+  "author": "",
+  "type": "commonjs",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  }
+}
