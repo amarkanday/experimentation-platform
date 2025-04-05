@@ -1,0 +1,35 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "cloudformation:*",
+        "s3:*",
+        "ec2:*",
+        "elasticloadbalancing:*",
+        "rds:*",
+        "dynamodb:*",
+        "elasticache:*",
+        "lambda:*",
+        "apigateway:*",
+        "logs:*",
+        "cloudwatch:*",
+        "kinesis:*",
+        "cognito-idp:*",
+        "es:*",
+        "kms:*",
+        "secretsmanager:*",
+        "ssm:*",
+        "ecs:*",
+        "ecr:*",
+        "iam:PassRole",
+        "iam:GetRole",
+        "iam:CreateRole",
+        "iam:AttachRolePolicy",
+        "iam:PutRolePolicy"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "table_exists": {
+    "assignments": true,
+    "events": true,
+    "experiments": true,
+    "feature-flags": true,
+    "overrides": true
+  },
+  "basic_operations": {
+    "experiment_create_retrieve": true,
+    "experiment_update": true,
+    "experiment_query": true,
+    "feature_flag_create_retrieve": true,
+    "feature_flag_update": true,
+    "feature_flag_query": true
+  },
+  "issues": []
+}

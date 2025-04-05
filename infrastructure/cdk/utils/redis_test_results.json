@@ -1,0 +1,24 @@
+{
+  "connection": true,
+  "basic_operations": {
+    "set_get": true,
+    "ttl": true,
+    "delete": true,
+    "exists": true
+  },
+  "hash_operations": {
+    "hset_hget": true,
+    "hmset_hgetall": true
+  },
+  "application_helpers": {
+    "feature_flag": true,
+    "experiment_assignment": true,
+    "counter": true
+  },
+  "performance": {
+    "set_ops_per_sec": 1852.018792610124,
+    "get_ops_per_sec": 3612.2293608005925,
+    "batch_size": 100
+  },
+  "issues": []
+}

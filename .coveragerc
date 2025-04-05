@@ -1,0 +1,24 @@
+# .coveragerc
+[run]
+source = backend/app
+omit =
+    backend/app/tests/*
+    backend/app/alembic/*
+    backend/app/db/init_db.py
+    backend/app/main.py
+    backend/app/*/__init__.py
+
+[report]
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    if self.debug:
+    raise NotImplementedError
+    if __name__ == .__main__.:
+    pass
+    raise ImportError
+    except ImportError:
+    raise HTTPException
+
+[html]
+directory = coverage_html_report
