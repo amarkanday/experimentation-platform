@@ -18,6 +18,10 @@ This directory contains documentation for various issues fixed in the experiment
 - [FastAPI Configuration Issues](FastAPI_Config_Issues.md) - Fixes for FastAPI configuration problems
 - [CloudWatch Logging Tests](cloudwatch_logging_tests.md) - Improvements to CloudWatch logging tests
 
+## Implementation Plans
+
+- [Role-Based Access Control (RBAC)](rbac_implementation_plan.md) - MVP plan for implementing RBAC in the platform
+
 ## Overview
 Fixed several issues in the logging system implementation to improve test coverage and functionality.
 
