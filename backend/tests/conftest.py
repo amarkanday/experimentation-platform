@@ -13,12 +13,13 @@ from sqlalchemy.orm import sessionmaker, scoped_session
 from sqlalchemy.orm import configure_mappers
 
 from backend.app.main import app
-from backend.app.db.session import get_db, Base
+from backend.app.db.session import get_db, Base, init_db
 from backend.app.api import deps
 from backend.app.models.user import User
 from backend.app.models.experiment import Experiment, ExperimentStatus
 from backend.app.core.database_config import get_schema_name
 from backend.app.core.config import settings, TestSettings
+from backend.app.models.base import set_schema
 
 logger = logging.getLogger(__name__)
 
@@ -34,15 +35,20 @@ def setup_test_environment():
     """Set up the test environment before any tests run."""
     # Set environment variables for testing
     os.environ["APP_ENV"] = "test"
+    os.environ["TESTING"] = "true"
 
     # Initialize test settings
     global settings
     settings = TestSettings()
 
+    # Set schema for all tables
+    set_schema()
+
     yield
 
     # Clean up
     os.environ.pop("APP_ENV", None)
+    os.environ.pop("TESTING", None)
 
 
 @pytest.fixture(scope="session")
@@ -79,18 +85,28 @@ def test_db():
 
         # Create engine for test database
         engine = create_engine(db_url)
+
+        # Initialize database with schema and tables
+        os.environ["DATABASE_URI"] = db_url
+        os.environ["APP_ENV"] = "test"
+        os.environ["TESTING"] = "true"
+
+        # Create schema and tables
         with engine.connect() as conn:
-            # Create schema
-            conn.execute(text("CREATE SCHEMA IF NOT EXISTS test_experimentation"))
+            schema_name = "test_experimentation"
+            conn.execute(text(f"DROP SCHEMA IF EXISTS {schema_name} CASCADE"))
+            conn.execute(text(f"CREATE SCHEMA {schema_name}"))
+            conn.execute(text(f"SET search_path TO {schema_name}"))
             conn.execute(text("COMMIT"))
 
-            # Set search path
-            conn.execute(text("SET search_path TO test_experimentation"))
-            conn.execute(text("COMMIT"))
+            # Import all models to ensure they are registered with the metadata
+            from backend.app.models import user, experiment, feature_flag, event, assignment
 
-            # Create all tables
+            # Set schema for all tables
+            Base.metadata.schema = schema_name
+
+            # Create tables
             Base.metadata.create_all(bind=engine)
-            conn.execute(text("COMMIT"))
 
         yield engine
 
@@ -125,6 +141,10 @@ def db_session(test_db):
     Session = sessionmaker(bind=connection)
     session = Session()
 
+    # Set schema for the session
+    session.execute(text("SET search_path TO test_experimentation"))
+    session.commit()
+
     try:
         yield session
     finally:
@@ -156,7 +176,7 @@ def client(db_session):
 
 
 @pytest.fixture
-def normal_user(db):
+def normal_user(db_session):
     """Create a normal user for testing."""
     user = User(
         username="testuser",
@@ -166,14 +186,14 @@ def normal_user(db):
         is_active=True,
         is_superuser=False,
     )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
+    db_session.add(user)
+    db_session.commit()
+    db_session.refresh(user)
     return user
 
 
 @pytest.fixture
-def superuser(db):
+def superuser(db_session):
     """Create a superuser for testing."""
     user = User(
         username="admin",
@@ -183,9 +203,9 @@ def superuser(db):
         is_active=True,
         is_superuser=True,
     )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
+    db_session.add(user)
+    db_session.commit()
+    db_session.refresh(user)
     return user
 
 
@@ -198,13 +218,11 @@ def mock_auth(normal_user):
     def override_get_current_active_user():
         return normal_user
 
-    # Set up dependency overrides
     app.dependency_overrides[deps.get_current_user] = override_get_current_user
     app.dependency_overrides[deps.get_current_active_user] = override_get_current_active_user
 
     yield
 
-    # Clean up dependency overrides
     app.dependency_overrides.pop(deps.get_current_user, None)
     app.dependency_overrides.pop(deps.get_current_active_user, None)
 

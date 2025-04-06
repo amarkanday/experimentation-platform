@@ -6,177 +6,169 @@ These tests verify that performance metrics collection works correctly.
 
 import time
 import threading
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, Mock
 
 import pytest
+import psutil
 
 from backend.app.utils.metrics import get_memory_usage, get_cpu_usage, MetricsCollector
 
 
-class TestMetricsFunctions:
-    """Tests for individual metrics functions."""
+class TestMetrics:
+    @pytest.fixture
+    def mock_process(self):
+        return Mock(spec=psutil.Process)
 
-    @patch("psutil.Process")
-    def test_get_memory_usage(self, mock_process):
-        """Test memory usage collection."""
-        # Setup mock
-        mock_instance = MagicMock()
-        mock_process.return_value = mock_instance
+    @pytest.fixture
+    def mock_psutil(self):
+        with patch('psutil.Process') as mock:
+            yield mock
 
-        # Mock memory info
-        mock_mem_info = MagicMock()
-        mock_mem_info.rss = 100 * 1024 * 1024  # 100 MB
-        mock_mem_info.vms = 200 * 1024 * 1024  # 200 MB
-        mock_instance.memory_info.return_value = mock_mem_info
-        mock_instance.memory_percent.return_value = 5.5
+    def test_get_memory_usage_success(self, mock_process):
+        # Test successful memory usage retrieval
+        mock_process.memory_percent.return_value = 42.0
 
-        # Call function
-        result = get_memory_usage()
+        result = get_memory_usage(mock_process)
 
-        # Check results
-        assert "rss_mb" in result
-        assert "vms_mb" in result
-        assert "percent" in result
-        assert result["rss_mb"] == 100.0
-        assert result["vms_mb"] == 200.0
-        assert result["percent"] == 5.5
+        assert result == 42.0
+        mock_process.memory_percent.assert_called_once()
 
-    @patch("psutil.Process")
-    def test_get_memory_usage_fallback(self, mock_process):
-        """Test memory usage fallback when psutil fails."""
-        # Make psutil raise an exception
-        mock_process.side_effect = Exception("Psutil error")
+    def test_get_memory_usage_error(self, mock_process):
+        # Test memory usage retrieval with error
+        mock_process.memory_percent.side_effect = psutil.Error("Memory error")
 
-        # Mock resource module
-        with patch("resource.getrusage") as mock_getrusage:
-            mock_usage = MagicMock()
-            mock_usage.ru_maxrss = 150 * 1024  # 150 MB (in KB)
-            mock_getrusage.return_value = mock_usage
+        result = get_memory_usage(mock_process)
 
-            # Call function
-            result = get_memory_usage()
+        assert result == 0.0
 
-            # Check results
-            assert "rss_mb" in result
-            assert result["rss_mb"] == 150.0
-            assert result["vms_mb"] == 0
-            assert result["percent"] == 0
+    def test_get_cpu_usage_success(self, mock_process):
+        # Test successful CPU usage retrieval
+        mock_process.cpu_percent.return_value = 75.0
 
-    @patch("psutil.Process")
-    def test_get_cpu_usage(self, mock_process):
-        """Test CPU usage collection."""
-        # Setup mock
-        mock_instance = MagicMock()
-        mock_process.return_value = mock_instance
-        mock_instance.cpu_percent.return_value = 12.5
+        result = get_cpu_usage(mock_process)
 
-        # Call function
-        result = get_cpu_usage()
+        assert result == 75.0
+        mock_process.cpu_percent.assert_called_once()
 
-        # Check result
-        assert result == 12.5
-
-    @patch("psutil.Process")
     def test_get_cpu_usage_error(self, mock_process):
-        """Test CPU usage when psutil fails."""
-        # Make psutil raise an exception
-        mock_process.side_effect = Exception("Psutil error")
+        # Test CPU usage retrieval with error
+        mock_process.cpu_percent.side_effect = psutil.Error("CPU error")
 
-        # Call function
-        result = get_cpu_usage()
+        result = get_cpu_usage(mock_process)
 
-        # Should return 0 on error
         assert result == 0.0
 
 
 class TestMetricsCollector:
     """Tests for the MetricsCollector class."""
 
-    @patch("backend.app.utils.metrics.get_memory_usage")
-    @patch("backend.app.utils.metrics.get_cpu_usage")
-    def test_metrics_collection(self, mock_cpu, mock_memory):
-        """Test basic metrics collection functionality."""
-        # Setup mocks
-        memory_start = {"rss_mb": 100.0, "vms_mb": 200.0, "percent": 5.0}
-        memory_end = {"rss_mb": 110.0, "vms_mb": 210.0, "percent": 5.5}
+    @pytest.fixture
+    def collector(self):
+        return MetricsCollector()
 
-        mock_memory.side_effect = [memory_start, memory_end]
-        mock_cpu.return_value = 15.0
+    @pytest.fixture
+    def mock_process(self):
+        process = Mock(spec=psutil.Process)
+        process.memory_percent.return_value = 50.0
+        process.cpu_percent.return_value = 25.0
+        return process
 
-        # Create collector and start/stop
-        collector = MetricsCollector()
+    @patch('psutil.Process')
+    def test_start_collection(self, mock_psutil, collector, mock_process):
+        # Test starting metrics collection
+        mock_psutil.return_value = mock_process
+
         collector.start()
 
-        # Add some CPU samples directly (bypassing the sampling thread)
-        collector._cpu_samples = [10.0, 15.0, 20.0]
+        assert collector.is_running is True
+        assert collector.process == mock_process
 
-        # Stop collection
+    def test_stop_collection(self, collector):
+        # Test stopping metrics collection
+        collector.start()
         collector.stop()
 
-        # Get metrics
+        assert collector.is_running is False
+        assert collector.process is None
+
+    @patch('psutil.Process')
+    def test_get_metrics(self, mock_psutil, collector, mock_process):
+        # Test getting collected metrics
+        mock_psutil.return_value = mock_process
+        collector.start()
+
         metrics = collector.get_metrics()
 
-        # Check metrics
-        assert "duration_ms" in metrics
-        assert "memory_change_mb" in metrics
-        assert "total_memory_mb" in metrics
-        assert "cpu_percent" in metrics
+        assert 'memory_usage' in metrics
+        assert 'cpu_usage' in metrics
+        assert metrics['memory_usage'] == 50.0
+        assert metrics['cpu_usage'] == 25.0
 
-        assert metrics["memory_change_mb"] == 10.0
-        assert metrics["total_memory_mb"] == 110.0
-        assert metrics["cpu_percent"] == 15.0  # Average of samples
-
-    def test_metrics_collector_threading(self):
-        """Test that the metrics collector handles threading correctly."""
-        with patch("backend.app.utils.metrics.get_cpu_usage") as mock_cpu:
-            # Setup CPU mock to return increasing values
-            mock_cpu.side_effect = [5.0, 10.0, 15.0, 20.0, 25.0]
-
-            # Create collector and start
-            collector = MetricsCollector()
-            collector.start()
-
-            # Wait for a bit to allow samples to be collected
-            time.sleep(0.2)
-
-            # Stop collection
-            collector.stop()
-
-            # Check that CPU samples were collected
-            assert len(collector._cpu_samples) > 0
-
-            # Get metrics
-            metrics = collector.get_metrics()
-
-            # Check metrics
-            assert "cpu_percent" in metrics
-            assert metrics["cpu_percent"] > 0
-
-    def test_get_metrics_without_start(self):
-        """Test getting metrics without starting collection."""
-        collector = MetricsCollector()
+    def test_get_metrics_not_started(self, collector):
+        # Test getting metrics without starting collection
         metrics = collector.get_metrics()
 
-        # Should return empty dict
         assert metrics == {}
 
-    @patch("backend.app.utils.metrics.get_memory_usage")
-    def test_memory_change_calculation(self, mock_memory):
-        """Test that memory change is calculated correctly."""
-        # Setup mocks with different memory values
-        memory_start = {"rss_mb": 100.0, "vms_mb": 200.0, "percent": 5.0}
-        memory_end = {"rss_mb": 90.0, "vms_mb": 190.0, "percent": 4.5}  # Memory decreased
-
-        mock_memory.side_effect = [memory_start, memory_end]
-
-        # Create collector and start/stop
-        collector = MetricsCollector()
+    @patch('psutil.Process')
+    def test_collect_metrics_thread(self, mock_psutil, collector, mock_process):
+        # Test metrics collection in background thread
+        mock_psutil.return_value = mock_process
         collector.start()
+
+        # Simulate some time passing
         collector.stop()
 
-        # Get metrics
-        metrics = collector.get_metrics()
+        assert len(collector.metrics_history) > 0
+        assert 'memory_usage' in collector.metrics_history[0]
+        assert 'cpu_usage' in collector.metrics_history[0]
 
-        # Check memory change calculation
-        assert metrics["memory_change_mb"] == -10.0  # Negative change
-        assert metrics["total_memory_mb"] == 90.0
+    @patch('psutil.Process')
+    def test_metrics_history_limit(self, mock_psutil, collector, mock_process):
+        # Test metrics history size limit
+        mock_psutil.return_value = mock_process
+        collector.max_history_size = 5
+        collector.start()
+
+        # Collect more metrics than the limit
+        for _ in range(10):
+            collector._collect_metrics()
+
+        collector.stop()
+
+        assert len(collector.metrics_history) == 5
+
+    @patch('psutil.Process')
+    def test_metrics_average(self, mock_psutil, collector, mock_process):
+        # Test calculating metrics averages
+        mock_psutil.return_value = mock_process
+        collector.start()
+
+        # Collect multiple metrics
+        for _ in range(3):
+            collector._collect_metrics()
+
+        averages = collector.get_average_metrics()
+
+        assert 'memory_usage' in averages
+        assert 'cpu_usage' in averages
+        assert averages['memory_usage'] == 50.0
+        assert averages['cpu_usage'] == 25.0
+
+    @patch('psutil.Process')
+    def test_metrics_peak(self, mock_psutil, collector, mock_process):
+        # Test finding peak metrics
+        mock_psutil.return_value = mock_process
+        collector.start()
+
+        # Collect metrics with varying values
+        mock_process.memory_percent.side_effect = [30.0, 50.0, 40.0]
+        mock_process.cpu_percent.side_effect = [20.0, 30.0, 25.0]
+
+        for _ in range(3):
+            collector._collect_metrics()
+
+        peaks = collector.get_peak_metrics()
+
+        assert peaks['memory_usage'] == 50.0
+        assert peaks['cpu_usage'] == 30.0

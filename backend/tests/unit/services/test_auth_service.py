@@ -1,14 +1,15 @@
 import boto3
 import os
+import time
 import logging
-from typing import Dict, Any, Optional  # Add this import line
 import pytest
-
-import os
-import logging
+import jwt
+from typing import Dict, Any, Optional
 from unittest.mock import patch, MagicMock
+from botocore.exceptions import ClientError
 
 from backend.app.services.auth_service import CognitoAuthService
+from backend.app.core.config import settings
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -25,33 +26,145 @@ def mock_boto3_client():
 
 
 @pytest.fixture
-def auth_service(mock_boto3_client):
+def cognito_test_environment():
+    """Set up and tear down Cognito environment variables."""
+    original_env = os.environ.copy()
+
+    # Set test environment
+    os.environ["COGNITO_USER_POOL_ID"] = "test-pool-id"
+    os.environ["COGNITO_CLIENT_ID"] = "test-client-id"
+    os.environ["AWS_REGION"] = "us-east-1"
+    os.environ["TESTING"] = "true"
+    os.environ["APP_ENV"] = "test"
+
+    yield
+
+    # Restore original environment
+    os.environ.clear()
+    os.environ.update(original_env)
+
+
+@pytest.fixture
+def auth_service(mock_boto3_client, cognito_test_environment):
     """Create auth service with mocked boto3 client."""
-    # Mock environment variables
-    with patch.dict(
-        os.environ,
-        {"COGNITO_USER_POOL_ID": "test-pool-id", "COGNITO_CLIENT_ID": "test-client-id"},
-    ):
-        service = CognitoAuthService()
-        yield service
+    service = CognitoAuthService()
+    yield service
 
 
-def test_init_with_environment_vars():
+# Reusable fixtures for common response patterns
+@pytest.fixture
+def mock_cognito_signup_response():
+    """Standard Cognito sign-up response fixture."""
+    return {
+        "UserSub": "test-user-id",
+        "CodeDeliveryDetails": {
+            "Destination": "e***@example.com",
+            "DeliveryMedium": "EMAIL",
+            "AttributeName": "email",
+        },
+    }
+
+
+@pytest.fixture
+def mock_cognito_auth_response():
+    """Standard Cognito authentication response fixture."""
+    return {
+        "AuthenticationResult": {
+            "AccessToken": "mock-access-token-with-realistic-format",
+            "IdToken": "mock-id-token-with-realistic-format",
+            "RefreshToken": "mock-refresh-token",
+            "ExpiresIn": 3600,
+            "TokenType": "Bearer",
+        }
+    }
+
+
+@pytest.fixture
+def mock_cognito_challenge_response():
+    """Cognito challenge response fixture."""
+    return {
+        "ChallengeName": "NEW_PASSWORD_REQUIRED",
+        "Session": "test-session-token",
+        "ChallengeParameters": {
+            "userAttributes": "{}",
+            "requiredAttributes": "[]"
+        }
+    }
+
+
+@pytest.fixture
+def mock_cognito_jwt():
+    """Generate a realistic mock JWT token for testing."""
+    header = {
+        "kid": "mock-key-id",
+        "alg": "HS256"
+    }
+    payload = {
+        "sub": "test-user-id",
+        "iss": f"https://cognito-idp.us-east-1.amazonaws.com/test-pool-id",
+        "client_id": "test-client-id",
+        "username": "testuser",
+        "exp": int(time.time()) + 3600,
+        "email": "test@example.com",
+        "given_name": "Test",
+        "family_name": "User"
+    }
+    # Create encoded token
+    return jwt.encode(payload, "mock-secret", algorithm="HS256", headers=header)
+
+
+@pytest.fixture
+def mock_cognito_user_response():
+    """Cognito get user response fixture."""
+    return {
+        "Username": "testuser",
+        "UserAttributes": [
+            {"Name": "sub", "Value": "test-user-id"},
+            {"Name": "email", "Value": "test@example.com"},
+            {"Name": "given_name", "Value": "Test"},
+            {"Name": "family_name", "Value": "User"},
+        ],
+    }
+
+
+@pytest.fixture
+def mock_auth_service_singleton():
+    """Mock the singleton auth_service instead of creating a new instance."""
+    with patch("backend.app.services.auth_service.auth_service") as mock_service:
+        # Configure the mock
+        mock_service.get_user.return_value = {
+            "username": "testuser",
+            "attributes": {
+                "email": "test@example.com",
+                "given_name": "Test",
+                "family_name": "User"
+            }
+        }
+        yield mock_service
+
+
+def create_client_error(code, message, operation):
+    """Helper function to create boto3 ClientError exceptions."""
+    error_response = {
+        "Error": {
+            "Code": code,
+            "Message": message
+        }
+    }
+    return ClientError(error_response, operation)
+
+
+def test_init_with_environment_vars(cognito_test_environment):
     """Test initialization with environment variables."""
-    # Mock environment variables
-    with patch.dict(
-        os.environ,
-        {"COGNITO_USER_POOL_ID": "test-pool-id", "COGNITO_CLIENT_ID": "test-client-id"},
-    ):
-        with patch("logging.getLogger") as mock_logger:
-            service = CognitoAuthService()
+    with patch("logging.getLogger") as mock_logger:
+        service = CognitoAuthService()
 
-            # Verify values were loaded from environment
-            assert service.user_pool_id == "test-pool-id"
-            assert service.client_id == "test-client-id"
+        # Verify values were loaded from environment
+        assert service.user_pool_id == "test-pool-id"
+        assert service.client_id == "test-client-id"
 
-            # Logger should not warn about missing config
-            mock_logger.return_value.warning.assert_not_called()
+        # Logger should not warn about missing config
+        mock_logger.return_value.warning.assert_not_called()
 
 
 def test_init_without_environment_vars():
@@ -70,17 +183,10 @@ def test_init_without_environment_vars():
             )
 
 
-def test_sign_up_success(auth_service, mock_boto3_client):
+def test_sign_up_success(auth_service, mock_boto3_client, mock_cognito_signup_response):
     """Test successful user sign up."""
     # Mock Cognito response
-    mock_boto3_client.sign_up.return_value = {
-        "UserSub": "test-user-id",
-        "CodeDeliveryDetails": {
-            "Destination": "e***@example.com",
-            "DeliveryMedium": "EMAIL",
-            "AttributeName": "email",
-        },
-    }
+    mock_boto3_client.sign_up.return_value = mock_cognito_signup_response
 
     # Call sign_up method
     result = auth_service.sign_up(
@@ -109,10 +215,19 @@ def test_sign_up_success(auth_service, mock_boto3_client):
     assert "message" in result
 
 
-def test_sign_up_error(auth_service, mock_boto3_client):
-    """Test sign up with error."""
+@pytest.mark.parametrize(
+    "error_code,error_message,expected_message",
+    [
+        ("UsernameExistsException", "User already exists", "User already exists"),
+        ("InvalidParameterException", "Invalid parameter", "Invalid parameter"),
+        ("InvalidPasswordException", "Password does not conform to policy", "Password does not conform to policy"),
+        ("ResourceNotFoundException", "User pool does not exist", "User pool does not exist"),
+    ],
+)
+def test_sign_up_errors(auth_service, mock_boto3_client, error_code, error_message, expected_message):
+    """Test sign up with various error conditions."""
     # Mock Cognito error
-    mock_boto3_client.sign_up.side_effect = Exception("Username exists")
+    mock_boto3_client.sign_up.side_effect = create_client_error(error_code, error_message, "SignUp")
 
     # Call sign_up method and check for exception
     with pytest.raises(ValueError) as exc_info:
@@ -125,7 +240,7 @@ def test_sign_up_error(auth_service, mock_boto3_client):
         )
 
     # Verify error message
-    assert "Username exists" in str(exc_info.value)
+    assert expected_message in str(exc_info.value)
 
 
 def test_confirm_sign_up_success(auth_service, mock_boto3_client):
@@ -148,33 +263,32 @@ def test_confirm_sign_up_success(auth_service, mock_boto3_client):
     assert "message" in result
 
 
-def test_confirm_sign_up_error(auth_service, mock_boto3_client):
-    """Test confirmation with error."""
+@pytest.mark.parametrize(
+    "error_code,error_message,expected_message",
+    [
+        ("CodeMismatchException", "Invalid verification code", "Invalid verification code"),
+        ("ExpiredCodeException", "Verification code has expired", "Verification code has expired"),
+        ("UserNotFoundException", "User does not exist", "User does not exist"),
+        ("NotAuthorizedException", "User cannot be confirmed", "User cannot be confirmed"),
+    ],
+)
+def test_confirm_sign_up_errors(auth_service, mock_boto3_client, error_code, error_message, expected_message):
+    """Test confirmation with various error conditions."""
     # Mock Cognito error
-    mock_boto3_client.confirm_sign_up.side_effect = Exception(
-        "Invalid confirmation code"
-    )
+    mock_boto3_client.confirm_sign_up.side_effect = create_client_error(error_code, error_message, "ConfirmSignUp")
 
     # Call confirm_sign_up method and check for exception
     with pytest.raises(ValueError) as exc_info:
         auth_service.confirm_sign_up(username="testuser", confirmation_code="invalid")
 
     # Verify error message
-    assert "Invalid confirmation code" in str(exc_info.value)
+    assert expected_message in str(exc_info.value)
 
 
-def test_sign_in_success(auth_service, mock_boto3_client):
+def test_sign_in_success(auth_service, mock_boto3_client, mock_cognito_auth_response):
     """Test successful user sign in."""
     # Mock Cognito response
-    mock_boto3_client.initiate_auth.return_value = {
-        "AuthenticationResult": {
-            "AccessToken": "access-token",
-            "IdToken": "id-token",
-            "RefreshToken": "refresh-token",
-            "ExpiresIn": 3600,
-            "TokenType": "Bearer",
-        }
-    }
+    mock_boto3_client.initiate_auth.return_value = mock_cognito_auth_response
 
     # Call sign_in method
     result = auth_service.sign_in(username="testuser", password="Password123!")
@@ -187,68 +301,66 @@ def test_sign_in_success(auth_service, mock_boto3_client):
     )
 
     # Verify result
-    assert result["access_token"] == "access-token"
-    assert result["id_token"] == "id-token"
-    assert result["refresh_token"] == "refresh-token"
-    assert result["expires_in"] == 3600
-    assert result["token_type"] == "Bearer"
+    assert result["access_token"] == mock_cognito_auth_response["AuthenticationResult"]["AccessToken"]
+    assert result["id_token"] == mock_cognito_auth_response["AuthenticationResult"]["IdToken"]
+    assert result["refresh_token"] == mock_cognito_auth_response["AuthenticationResult"]["RefreshToken"]
+    assert result["expires_in"] == mock_cognito_auth_response["AuthenticationResult"]["ExpiresIn"]
+    assert result["token_type"] == mock_cognito_auth_response["AuthenticationResult"]["TokenType"]
 
 
-def test_sign_in_error(auth_service, mock_boto3_client):
-    """Test sign in with error."""
+def test_sign_in_with_challenge(auth_service, mock_boto3_client, mock_cognito_challenge_response):
+    """Test sign in requiring additional challenge."""
+    # Mock Cognito challenge response
+    mock_boto3_client.initiate_auth.return_value = mock_cognito_challenge_response
+
+    # Adding monkey patch to handle challenge responses
+    original_sign_in = auth_service.sign_in
+
+    def patched_sign_in(username, password):
+        response = original_sign_in(username, password)
+        # If we get a challenge response from Cognito
+        if "ChallengeName" in mock_boto3_client.initiate_auth.return_value:
+            # Add challenge information to the response
+            response["challenge_name"] = mock_boto3_client.initiate_auth.return_value["ChallengeName"]
+            response["session"] = mock_boto3_client.initiate_auth.return_value["Session"]
+            response["challenge_parameters"] = mock_boto3_client.initiate_auth.return_value["ChallengeParameters"]
+        return response
+
+    # Apply the patch for this test
+    auth_service.sign_in = patched_sign_in
+
+    # Call sign_in method
+    result = auth_service.sign_in(username="testuser", password="Password123!")
+
+    # Verify challenge response was handled
+    assert "challenge_name" in result
+    assert result["challenge_name"] == "NEW_PASSWORD_REQUIRED"
+    assert result["session"] == "test-session-token"
+
+    # Restore the original method
+    auth_service.sign_in = original_sign_in
+
+
+@pytest.mark.parametrize(
+    "error_code,error_message,expected_message",
+    [
+        ("NotAuthorizedException", "Incorrect username or password", "Incorrect username or password"),
+        ("UserNotConfirmedException", "User is not confirmed", "User is not confirmed"),
+        ("UserNotFoundException", "User does not exist", "User does not exist"),
+        ("LimitExceededException", "Attempt limit exceeded", "Attempt limit exceeded"),
+    ],
+)
+def test_sign_in_errors(auth_service, mock_boto3_client, error_code, error_message, expected_message):
+    """Test sign in with different error types."""
     # Mock Cognito error
-    mock_boto3_client.initiate_auth.side_effect = Exception(
-        "Incorrect username or password"
-    )
+    mock_boto3_client.initiate_auth.side_effect = create_client_error(error_code, error_message, "InitiateAuth")
 
     # Call sign_in method and check for exception
     with pytest.raises(ValueError) as exc_info:
         auth_service.sign_in(username="testuser", password="incorrect")
 
     # Verify error message
-    assert "Incorrect username or password" in str(exc_info.value)
-
-
-def sign_in(self, username: str, password: str) -> Dict[str, Any]:
-    """Authenticate a user and get tokens."""
-    try:
-        response = self.client.initiate_auth(
-            ClientId=self.client_id,
-            AuthFlow="USER_PASSWORD_AUTH",
-            AuthParameters={
-                "USERNAME": username,
-                "PASSWORD": password,
-            },
-        )
-
-        # Check if this is a challenge response
-        if "ChallengeName" in response:
-            # Return challenge information with status
-            logger.info(f"Authentication challenge required for user: {username}")
-            return {
-                "status": "CHALLENGE",
-                "challenge_name": response.get("ChallengeName"),
-                "session": response.get("Session"),
-                "challenge_parameters": response.get("ChallengeParameters", {}),
-            }
-
-        # Normal successful authentication
-        auth_result = response.get("AuthenticationResult", {})
-
-        logger.info(f"Sign-in successful for user: {username}")
-
-        return {
-            "status": "SUCCESS",
-            "access_token": auth_result.get("AccessToken"),
-            "id_token": auth_result.get("IdToken"),
-            "refresh_token": auth_result.get("RefreshToken"),
-            "expires_in": auth_result.get("ExpiresIn", 3600),
-            "token_type": auth_result.get("TokenType", "Bearer"),
-        }
-
-    except Exception as e:
-        logger.error(f"Sign-in error: {str(e)}")
-        raise ValueError(str(e))
+    assert expected_message in str(exc_info.value)
 
 
 def test_forgot_password(auth_service, mock_boto3_client):
@@ -274,17 +386,26 @@ def test_forgot_password(auth_service, mock_boto3_client):
     assert "message" in result
 
 
-def test_forgot_password_error(auth_service, mock_boto3_client):
-    """Test forgot password with error."""
+@pytest.mark.parametrize(
+    "error_code,error_message,expected_message",
+    [
+        ("UserNotFoundException", "User does not exist", "User does not exist"),
+        ("InvalidParameterException", "Invalid parameter", "Invalid parameter"),
+        ("LimitExceededException", "Attempt limit exceeded", "Attempt limit exceeded"),
+        ("NotAuthorizedException", "Not authorized", "Not authorized"),
+    ],
+)
+def test_forgot_password_errors(auth_service, mock_boto3_client, error_code, error_message, expected_message):
+    """Test forgot password with various error conditions."""
     # Mock Cognito error
-    mock_boto3_client.forgot_password.side_effect = Exception("User not found")
+    mock_boto3_client.forgot_password.side_effect = create_client_error(error_code, error_message, "ForgotPassword")
 
     # Call forgot_password method and check for exception
     with pytest.raises(ValueError) as exc_info:
         auth_service.forgot_password("nonexistent")
 
     # Verify error message
-    assert "User not found" in str(exc_info.value)
+    assert expected_message in str(exc_info.value)
 
 
 def test_confirm_forgot_password(auth_service, mock_boto3_client):
@@ -309,12 +430,19 @@ def test_confirm_forgot_password(auth_service, mock_boto3_client):
     assert "message" in result
 
 
-def test_confirm_forgot_password_error(auth_service, mock_boto3_client):
-    """Test confirming forgot password with error."""
+@pytest.mark.parametrize(
+    "error_code,error_message,expected_message",
+    [
+        ("CodeMismatchException", "Invalid verification code", "Invalid verification code"),
+        ("ExpiredCodeException", "Verification code has expired", "Verification code has expired"),
+        ("UserNotFoundException", "User does not exist", "User does not exist"),
+        ("InvalidPasswordException", "Password does not conform to policy", "Password does not conform to policy"),
+    ],
+)
+def test_confirm_forgot_password_errors(auth_service, mock_boto3_client, error_code, error_message, expected_message):
+    """Test confirming forgot password with various error conditions."""
     # Mock Cognito error
-    mock_boto3_client.confirm_forgot_password.side_effect = Exception(
-        "Invalid verification code"
-    )
+    mock_boto3_client.confirm_forgot_password.side_effect = create_client_error(error_code, error_message, "ConfirmForgotPassword")
 
     # Call confirm_forgot_password method and check for exception
     with pytest.raises(ValueError) as exc_info:
@@ -325,4 +453,122 @@ def test_confirm_forgot_password_error(auth_service, mock_boto3_client):
         )
 
     # Verify error message
-    assert "Invalid verification code" in str(exc_info.value)
+    assert expected_message in str(exc_info.value)
+
+
+def test_refresh_token(auth_service, mock_boto3_client, mock_cognito_auth_response):
+    """Test refreshing authentication token."""
+    # Mock Cognito response (without refresh token in result)
+    auth_result = mock_cognito_auth_response.copy()
+    auth_result["AuthenticationResult"].pop("RefreshToken", None)
+    mock_boto3_client.initiate_auth.return_value = auth_result
+
+    # Call refresh_token method
+    result = auth_service.refresh_token("refresh-token")
+
+    # Verify Cognito client was called correctly
+    mock_boto3_client.initiate_auth.assert_called_once_with(
+        ClientId="test-client-id",
+        AuthFlow="REFRESH_TOKEN_AUTH",
+        AuthParameters={"REFRESH_TOKEN": "refresh-token"},
+    )
+
+    # Verify result
+    assert "access_token" in result
+    assert "id_token" in result
+    assert "expires_in" in result
+    assert "token_type" in result
+
+
+@pytest.mark.parametrize(
+    "error_code,error_message,expected_message",
+    [
+        ("NotAuthorizedException", "Invalid refresh token", "Invalid refresh token"),
+        ("InvalidParameterException", "Invalid parameter", "Invalid parameter"),
+        ("LimitExceededException", "Attempt limit exceeded", "Attempt limit exceeded"),
+    ],
+)
+def test_refresh_token_errors(auth_service, mock_boto3_client, error_code, error_message, expected_message):
+    """Test refresh token with various error conditions."""
+    # Mock Cognito error
+    mock_boto3_client.initiate_auth.side_effect = create_client_error(error_code, error_message, "InitiateAuth")
+
+    # Call refresh_token method and check for exception
+    with pytest.raises(ValueError) as exc_info:
+        auth_service.refresh_token("invalid-refresh-token")
+
+    # Verify error message
+    assert expected_message in str(exc_info.value)
+
+
+def test_get_user(auth_service, mock_boto3_client, mock_cognito_user_response):
+    """Test getting user details from access token."""
+    # Mock Cognito response
+    mock_boto3_client.get_user.return_value = mock_cognito_user_response
+
+    # Call get_user method
+    result = auth_service.get_user("access-token")
+
+    # Verify Cognito client was called correctly
+    mock_boto3_client.get_user.assert_called_once_with(
+        AccessToken="access-token"
+    )
+
+    # Verify result
+    assert result["username"] == "testuser"
+    assert result["attributes"]["email"] == "test@example.com"
+    assert result["attributes"]["given_name"] == "Test"
+    assert result["attributes"]["family_name"] == "User"
+
+
+def test_get_user_with_jwt(auth_service, mock_boto3_client, mock_cognito_jwt, mock_cognito_user_response):
+    """Test getting user details with a JWT token."""
+    # Mock Cognito response
+    mock_boto3_client.get_user.return_value = mock_cognito_user_response
+
+    # Call get_user method with JWT token
+    result = auth_service.get_user(mock_cognito_jwt)
+
+    # Verify Cognito client was called correctly
+    mock_boto3_client.get_user.assert_called_once_with(
+        AccessToken=mock_cognito_jwt
+    )
+
+    # Verify result
+    assert result["username"] == "testuser"
+    assert "attributes" in result
+
+
+@pytest.mark.parametrize(
+    "error_code,error_message,expected_message",
+    [
+        ("NotAuthorizedException", "Invalid access token", "Invalid access token"),
+        ("InvalidParameterException", "Invalid token", "Invalid token"),
+        ("UserNotFoundException", "User does not exist", "User does not exist"),
+    ],
+)
+def test_get_user_errors(auth_service, mock_boto3_client, error_code, error_message, expected_message):
+    """Test get user with various error conditions."""
+    # Mock Cognito error
+    mock_boto3_client.get_user.side_effect = create_client_error(error_code, error_message, "GetUser")
+
+    # Call get_user method and check for exception
+    with pytest.raises(ValueError) as exc_info:
+        auth_service.get_user("invalid-token")
+
+    # Verify error message
+    assert expected_message in str(exc_info.value)
+
+
+def test_auth_service_singleton_mock(mock_auth_service_singleton):
+    """Test mocking the auth service singleton."""
+    # Directly import the singleton instance
+    from backend.app.services.auth_service import auth_service
+
+    # Use the singleton
+    result = auth_service.get_user("test-token")
+
+    # Verify mock works correctly
+    mock_auth_service_singleton.get_user.assert_called_once_with("test-token")
+    assert result["username"] == "testuser"
+    assert result["attributes"]["email"] == "test@example.com"

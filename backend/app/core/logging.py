@@ -10,148 +10,119 @@ import os
 import sys
 from logging.handlers import RotatingFileHandler
 from pythonjsonlogger import jsonlogger
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Union
 import uuid
 from datetime import datetime
 import watchtower
 import boto3
+from pythonjsonlogger.jsonlogger import JsonFormatter
+import socket
 
-# Configure JSON formatter
-class CustomJsonFormatter(jsonlogger.JsonFormatter):
-    """Custom JSON formatter that includes additional context."""
+class CustomJsonFormatter(JsonFormatter):
+    """Custom JSON formatter that adds additional fields to log records."""
 
-    def add_fields(self, log_record: Dict[str, Any], record: logging.LogRecord, message_dict: Dict[str, Any]) -> None:
+    def __init__(self):
+        """Initialize the formatter with default format and style."""
+        fmt = '%(asctime)s %(name)s %(levelname)s %(message)s'
+        self._style = logging.PercentStyle(fmt)  # Initialize style before super().__init__()
+        super().__init__(
+            fmt=fmt,
+            style='%',  # Use % style formatting
+            datefmt=None,
+            json_default=str,
+            json_encoder=None,
+            reserved_attrs=[]
+        )
+
+    def add_fields(self, log_record, record, message_dict):
         """Add custom fields to the log record."""
-        super(CustomJsonFormatter, self).add_fields(log_record, record, message_dict)
+        super().add_fields(log_record, record, message_dict)
 
-        # Add timestamp in ISO format
-        log_record['timestamp'] = datetime.utcnow().isoformat()
-
-        # Add log level
+        # Add standard fields
+        log_record['logger'] = record.name
         log_record['level'] = record.levelname
 
-        # Add logger name
-        log_record['logger'] = record.name
-
-        # Add file and line number
-        log_record['file'] = record.filename
-        log_record['line'] = record.lineno
-
-        # Add function name
-        log_record['function'] = record.funcName
-
-        # Add process and thread information
-        log_record['process'] = record.process
-        log_record['thread'] = record.thread
-
-        # Add correlation ID if available
-        if hasattr(record, 'correlation_id'):
-            log_record['correlation_id'] = record.correlation_id
-
-        # Add user ID if available
-        if hasattr(record, 'user_id'):
-            log_record['user_id'] = record.user_id
-
-        # Add session ID if available
-        if hasattr(record, 'session_id'):
-            log_record['session_id'] = record.session_id
-
-        # Add environment
-        log_record['environment'] = os.getenv('APP_ENV', 'development')
+        # Add context fields if they exist
+        for field in ['correlation_id', 'user_id', 'session_id']:
+            if hasattr(record, field):
+                log_record[field] = getattr(record, field)
 
 def setup_logging(
-    log_level: str = "INFO",
-    log_file: str = "app.log",
+    level: int = logging.INFO,
+    format: Optional[str] = None,
+    log_file: Optional[str] = None,
     max_bytes: int = 10 * 1024 * 1024,  # 10MB
     backup_count: int = 5,
-    enable_cloudwatch: bool = True
-) -> None:
-    """
-    Set up logging configuration.
+    enable_cloudwatch: bool = False
+) -> logging.Logger:
+    """Set up logging configuration."""
+    logger = logging.getLogger()
+    logger.setLevel(level)
 
-    Args:
-        log_level: The logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-        log_file: Path to the log file
-        max_bytes: Maximum size of each log file before rotation
-        backup_count: Number of backup files to keep
-        enable_cloudwatch: Whether to enable CloudWatch logging
-    """
-    # Create formatter
-    formatter = CustomJsonFormatter(
-        '%(timestamp)s %(level)s %(name)s %(message)s'
-    )
+    # Remove existing handlers
+    for handler in logger.handlers[:]:
+        logger.removeHandler(handler)
 
-    # Create console handler
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setFormatter(formatter)
+    # Create and configure handler
+    if log_file:
+        handler = RotatingFileHandler(log_file, maxBytes=max_bytes, backupCount=backup_count)
+    else:
+        handler = logging.StreamHandler()
 
-    # Create file handler with rotation
-    file_handler = RotatingFileHandler(
-        log_file,
-        maxBytes=max_bytes,
-        backupCount=backup_count
-    )
-    file_handler.setFormatter(formatter)
+    handler.setLevel(level)
 
-    # Configure root logger
-    root_logger = logging.getLogger()
-    root_logger.setLevel(log_level)
-    root_logger.addHandler(console_handler)
-    root_logger.addHandler(file_handler)
+    # Use standard formatter for tests, JSON formatter for production
+    if format:
+        formatter = logging.Formatter(format)
+    else:
+        # Use CustomJsonFormatter by default
+        formatter = CustomJsonFormatter()
+
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
 
     # Add CloudWatch handler if enabled
-    if enable_cloudwatch and os.getenv('AWS_ACCESS_KEY_ID'):
+    if enable_cloudwatch:
         try:
-            # Get environment and region
-            env = os.getenv('APP_ENV', 'development')
-            region = os.getenv('AWS_REGION', 'us-east-1')
+            aws_client = boto3.client('logs')
+            app_env = os.getenv('APP_ENV', 'dev')
+            log_group = f"/experimentation-platform/{app_env}"
+            stream_name = f"{socket.gethostname()}-{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}"
 
-            # Create CloudWatch client
-            cloudwatch = boto3.client('logs', region_name=region)
-
-            # Create CloudWatch handler with batching
             cloudwatch_handler = watchtower.CloudWatchLogHandler(
-                log_group=f"/experimentation-platform/{env}",
-                stream_name=datetime.utcnow().strftime("%Y/%m/%d"),
-                boto3_client=cloudwatch,
-                batch_count=100,  # Number of logs to batch
-                batch_timeout=5,   # Seconds to wait before sending batch
+                log_group=log_group,
+                stream_name=stream_name,
+                boto3_client=aws_client,
+                batch_count=100,
+                batch_timeout=5,
                 create_log_group=True
             )
+            cloudwatch_handler.setLevel(level)  # Set the same level as root logger
             cloudwatch_handler.setFormatter(formatter)
-            root_logger.addHandler(cloudwatch_handler)
-
-            # Log successful CloudWatch setup
-            root_logger.info(
-                "CloudWatch logging enabled",
-                extra={
-                    "log_group": f"/experimentation-platform/{env}",
-                    "region": region
-                }
-            )
+            logger.addHandler(cloudwatch_handler)
+            logger.info("CloudWatch logging enabled")
         except Exception as e:
-            root_logger.error(
-                "Failed to set up CloudWatch logging",
-                exc_info=True,
-                extra={"error": str(e)}
-            )
+            logger.warning(f"Failed to initialize CloudWatch logging: {e}")
 
-    # Configure third-party loggers
-    logging.getLogger("uvicorn").setLevel(log_level)
-    logging.getLogger("fastapi").setLevel(log_level)
-    logging.getLogger("sqlalchemy.engine").setLevel(log_level)
+    return logger
 
 def get_logger(name: str) -> logging.Logger:
     """
-    Get a logger instance with the given name.
+    Get a logger with the specified name.
 
     Args:
-        name: The name of the logger
+        name: The name of the logger.
 
     Returns:
-        A configured logger instance
+        A logger instance.
     """
-    return logging.getLogger(name)
+    try:
+        return logging.getLogger(name)
+    except Exception:
+        # If there's an error getting the logger, create a new one
+        logger = logging.Logger(name)
+        logger.setLevel(logging.INFO)
+        return logger
 
 class LogContext:
     """Context manager for adding context to logs."""
@@ -184,7 +155,7 @@ class LogContext:
         if self.session_id:
             setattr(self.logger, 'session_id', self.session_id)
 
-        return self.logger
+        return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         # Restore old values
@@ -202,3 +173,47 @@ class LogContext:
             setattr(self.logger, 'session_id', self.old_session_id)
         elif hasattr(self.logger, 'session_id'):
             delattr(self.logger, 'session_id')
+
+    def info(self, msg: str, *args, **kwargs):
+        """Log an info message with context."""
+        extra = kwargs.get('extra', {})
+        extra.update({
+            'correlation_id': self.correlation_id,
+            'user_id': self.user_id,
+            'session_id': self.session_id
+        })
+        kwargs['extra'] = extra
+        self.logger.info(msg, *args, **kwargs)
+
+    def error(self, msg: str, *args, **kwargs):
+        """Log an error message with context."""
+        extra = kwargs.get('extra', {})
+        extra.update({
+            'correlation_id': self.correlation_id,
+            'user_id': self.user_id,
+            'session_id': self.session_id
+        })
+        kwargs['extra'] = extra
+        self.logger.error(msg, *args, **kwargs)
+
+    def warning(self, msg: str, *args, **kwargs):
+        """Log a warning message with context."""
+        extra = kwargs.get('extra', {})
+        extra.update({
+            'correlation_id': self.correlation_id,
+            'user_id': self.user_id,
+            'session_id': self.session_id
+        })
+        kwargs['extra'] = extra
+        self.logger.warning(msg, *args, **kwargs)
+
+    def debug(self, msg: str, *args, **kwargs):
+        """Log a debug message with context."""
+        extra = kwargs.get('extra', {})
+        extra.update({
+            'correlation_id': self.correlation_id,
+            'user_id': self.user_id,
+            'session_id': self.session_id
+        })
+        kwargs['extra'] = extra
+        self.logger.debug(msg, *args, **kwargs)

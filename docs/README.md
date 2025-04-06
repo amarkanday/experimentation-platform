@@ -108,9 +108,50 @@ docs/
 - [Security Best Practices](auth/flow.md#security)
 - [User Management](auth/user-guide.md)
 
-## Contributing to Documentation
+## Documentation Sections
 
-When adding new documentation:
+### Architecture
+- [System Architecture](architecture/system-architecture.md)
+- [Component Diagrams](architecture/component-diagrams.md)
+- [Data Flow](architecture/data-flow.md)
+
+### API
+- [API Reference](api/reference.md)
+- [Authentication](api/authentication.md)
+- [Rate Limiting](api/rate-limiting.md)
+
+### Getting Started
+- [Quick Start Guide](getting-started/quick-start.md)
+- [Installation](getting-started/installation.md)
+- [Configuration](getting-started/configuration.md)
+
+### Development
+- [Development Setup](development/setup.md)
+- [Coding Standards](development/coding-standards.md)
+- [Testing Guide](development/testing.md)
+- [CI/CD Pipeline](development/cicd.md)
+
+### Infrastructure
+- [AWS Resources](infrastructure/aws-resources.md)
+- [CDK Deployment](infrastructure/cdk-deployment.md)
+- [Database Setup](infrastructure/database-setup.md)
+
+### Authentication
+- [Authentication Flow](auth/authentication-flow.md)
+- [Authorization](auth/authorization.md)
+- [User Management](auth/user-management.md)
+
+### Monitoring and Error Tracking
+- [Monitoring Overview](monitoring/monitoring-overview.md)
+- [Setup Guide](monitoring/setup-guide.md)
+- [Dashboard Reference](monitoring/dashboard-reference.md)
+- [Log Insights Queries](monitoring/log-insights-queries.md)
+- [Troubleshooting Guide](monitoring/troubleshooting-guide.md)
+
+## Contributing to the Documentation
+
+We welcome contributions to improve this documentation. Please follow these guidelines:
+
 1. Place files in the appropriate directory based on their content
 2. Update this README.md with any new sections or files
 3. Follow the existing documentation style and format

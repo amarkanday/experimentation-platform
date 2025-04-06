@@ -1,0 +1,71 @@
+{
+  "widgets": [
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 0,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          ["ExperimentationPlatform", "CPUUtilization", {"stat": "Average"}]
+        ],
+        "period": 300,
+        "stat": "Average",
+        "region": "us-west-2",
+        "title": "CPU Utilization"
+      }
+    },
+    {
+      "type": "metric",
+      "x": 12,
+      "y": 0,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          ["ExperimentationPlatform", "MemoryUtilization", {"stat": "Average"}]
+        ],
+        "period": 300,
+        "stat": "Average",
+        "region": "us-west-2",
+        "title": "Memory Utilization"
+      }
+    },
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 6,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          ["ExperimentationPlatform", "ErrorCount", {"stat": "Sum"}]
+        ],
+        "period": 300,
+        "stat": "Sum",
+        "region": "us-west-2",
+        "title": "Total Errors"
+      }
+    },
+    {
+      "type": "metric",
+      "x": 12,
+      "y": 6,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          ["ExperimentationPlatform", "ErrorCount", "ErrorType", "ValueError", {"stat": "Sum"}],
+          ["ExperimentationPlatform", "ErrorCount", "ErrorType", "KeyError", {"stat": "Sum"}],
+          ["ExperimentationPlatform", "ErrorCount", "ErrorType", "AttributeError", {"stat": "Sum"}],
+          ["ExperimentationPlatform", "ErrorCount", "ErrorType", "Exception", {"stat": "Sum"}]
+        ],
+        "period": 300,
+        "stat": "Sum",
+        "region": "us-west-2",
+        "title": "Errors by Type"
+      }
+    }
+  ]
+}

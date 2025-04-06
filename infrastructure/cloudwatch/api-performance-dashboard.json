@@ -1,0 +1,73 @@
+{
+  "widgets": [
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 0,
+      "width": 24,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          ["ExperimentationPlatform", "RequestLatency", "Endpoint", "/api/v1/experiments", {"stat": "Average"}],
+          ["ExperimentationPlatform", "RequestLatency", "Endpoint", "/api/v1/users", {"stat": "Average"}],
+          ["ExperimentationPlatform", "RequestLatency", "Endpoint", "/api/v1/feature-flags", {"stat": "Average"}],
+          ["ExperimentationPlatform", "RequestLatency", "Endpoint", "/api", {"stat": "Average"}]
+        ],
+        "period": 300,
+        "stat": "Average",
+        "region": "us-west-2",
+        "title": "API Latency by Endpoint (ms)"
+      }
+    },
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 6,
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          ["ExperimentationPlatform", "RequestLatency", {"stat": "p50"}],
+          ["ExperimentationPlatform", "RequestLatency", {"stat": "p90"}],
+          ["ExperimentationPlatform", "RequestLatency", {"stat": "p99"}]
+        ],
+        "period": 300,
+        "region": "us-west-2",
+        "title": "API Latency Percentiles (ms)"
+      }
+    },
+    {
+      "type": "metric",
+      "x": 8,
+      "y": 6,
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          ["ExperimentationPlatform", "ErrorCount", {"stat": "Sum"}]
+        ],
+        "period": 300,
+        "stat": "Sum",
+        "region": "us-west-2",
+        "title": "API Errors"
+      }
+    },
+    {
+      "type": "metric",
+      "x": 16,
+      "y": 6,
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          ["ExperimentationPlatform", "CPUUtilization", {"stat": "Maximum"}],
+          ["ExperimentationPlatform", "MemoryUtilization", {"stat": "Maximum"}]
+        ],
+        "period": 300,
+        "stat": "Maximum",
+        "region": "us-west-2",
+        "title": "Resource Utilization (%) - Maximum"
+      }
+    }
+  ]
+}

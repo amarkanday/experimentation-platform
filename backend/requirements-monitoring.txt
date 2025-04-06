@@ -1,0 +1,13 @@
+# AWS SDK
+boto3==1.28.0
+botocore==1.31.0
+
+# System monitoring
+psutil==5.9.5
+
+# FastAPI dependencies (if not already in main requirements.txt)
+# fastapi>=0.95.0
+# starlette>=0.27.0
+
+# Other utilities
+python-json-logger==2.0.7

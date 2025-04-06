@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 @lru_cache(maxsize=1)
 def get_schema_name() -> str:
     """Get the schema name based on the environment."""
-    if os.environ.get("APP_ENV") == "test":
+    if os.environ.get("APP_ENV") == "test" or os.environ.get("TESTING") == "true":
         schema_name = "test_experimentation"
     else:
         schema_name = "experimentation"

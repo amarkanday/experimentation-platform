@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Path, Body, status
 from sqlalchemy.orm import Session
 
 from backend.app.api import deps
+from backend.app.core.config import settings
 from backend.app.models.user import User
 from backend.app.schemas.user import (
     UserCreate,
@@ -18,6 +19,7 @@ from backend.app.schemas.user import (
     UserResponse,
     UserListResponse,
 )
+from backend.app.services.auth_service import CognitoAuthService
 
 router = APIRouter()
 
