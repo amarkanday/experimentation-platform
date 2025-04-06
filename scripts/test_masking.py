@@ -15,7 +15,7 @@ from pprint import pprint
 sys.path.append(os.path.abspath("backend"))
 
 try:
-    from app.utils.masking import mask_data, mask_email, mask_credit_card, mask_phone_number, mask_ip_address
+    from backend.app.utils.masking import mask_data, mask_email, mask_credit_card, mask_phone_number, mask_ip_address
 except ImportError:
     print("Error: Could not import masking module. Make sure you're running this script from the project root.")
     print("Usage: python scripts/test_masking.py [additional_fields]")

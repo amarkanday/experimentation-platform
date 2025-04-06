@@ -266,3 +266,48 @@ We welcome contributions to the platform! Please follow these steps:
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Monitoring and Error Tracking
+
+The platform includes a robust monitoring and error tracking system using AWS CloudWatch:
+
+### Setup
+1. Create required CloudWatch log groups:
+   ```bash
+   aws logs create-log-group --log-group-name /experimentation-platform/api --profile experimentation-platform --region us-west-2
+   aws logs create-log-group --log-group-name /experimentation-platform/services --profile experimentation-platform --region us-west-2
+   aws logs create-log-group --log-group-name /experimentation-platform/errors --profile experimentation-platform --region us-west-2
+   ```
+
+2. Set retention policies:
+   ```bash
+   aws logs put-retention-policy --log-group-name /experimentation-platform/errors --retention-in-days 30 --profile experimentation-platform --region us-west-2
+   ```
+
+3. Deploy CloudWatch dashboards:
+   ```bash
+   cd infrastructure/cloudwatch
+   ./deploy-dashboards.sh
+   ```
+
+### Features
+- **Error Tracking**: All application errors are captured, logged, and sent to CloudWatch.
+- **Performance Metrics**: Request latency, CPU usage, and memory consumption are tracked.
+- **Dashboards**: Two pre-configured dashboards monitor:
+  - System Health: CPU, memory, and error metrics
+  - API Performance: Latency by endpoint, percentiles, and resource utilization
+
+### Configuration
+The monitoring system can be configured through environment variables:
+- `AWS_PROFILE`: AWS profile to use (default: "experimentation-platform")
+- `AWS_REGION`: AWS region (default: "us-west-2")
+- `COLLECT_REQUEST_BODY`: Whether to collect request bodies in error logs (default: "false")
+
+### Dependencies
+Required dependencies are listed in `backend/requirements-monitoring.txt`:
+```
+boto3==1.28.0
+botocore==1.31.0
+psutil==5.9.5
+python-json-logger==2.0.7
+```

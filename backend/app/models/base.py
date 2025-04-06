@@ -8,11 +8,19 @@ from sqlalchemy.ext.declarative import declared_attr
 from sqlalchemy.orm import configure_mappers
 from backend.app.core.database_config import get_schema_name
 
-# Create metadata with schema
-metadata = MetaData(schema=get_schema_name())
+# Create metadata without schema
+metadata = MetaData()
 
 # Create base with metadata
 Base = declarative_base(metadata=metadata)
+
+# Set schema dynamically
+def set_schema():
+    """Set the schema for all tables."""
+    schema = get_schema_name()
+    metadata.schema = schema
+    for table in metadata.tables.values():
+        table.schema = schema
 
 class BaseModel:
     """

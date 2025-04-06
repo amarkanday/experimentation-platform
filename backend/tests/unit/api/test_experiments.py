@@ -128,7 +128,8 @@ def mock_user():
 @pytest.fixture
 def mock_cache_control():
     """Mock cache control."""
-    return {"enabled": False, "client": None}
+    from backend.app.api.deps import CacheControl
+    return CacheControl(enabled=False, skip=False, redis=None)
 
 
 @pytest.mark.asyncio

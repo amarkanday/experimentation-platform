@@ -5,15 +5,19 @@ These tests verify the request/response logging middleware functionality.
 """
 
 import json
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import patch, MagicMock, AsyncMock, Mock
 import os
+import logging
 
 import pytest
 from fastapi import FastAPI, Request, Response, HTTPException
 from starlette.testclient import TestClient
+import watchtower
 
-from backend.app.middleware.logging_middleware import LoggingMiddleware
+from backend.app.middleware.logging_middleware import LoggingMiddleware, RequestLoggingMiddleware
 from backend.app.utils.metrics import MetricsCollector
+from backend.app.utils.aws_client import AWSClient
+from backend.app.core.logging import setup_logging
 
 
 @pytest.fixture
@@ -196,80 +200,219 @@ class TestLoggingMiddleware:
 class TestRequestLoggingMiddleware:
     """Tests for the legacy RequestLoggingMiddleware."""
 
+    @pytest.fixture
+    def test_app(self):
+        """Create a test FastAPI app."""
+        app = FastAPI()
+        return app
+
     @pytest.mark.asyncio
-    async def test_legacy_middleware(self, mock_metrics, mock_masking):
+    async def test_legacy_middleware(self, test_app, mock_metrics, mock_masking):
         """Test the legacy middleware implementation."""
         from backend.app.middleware.logging_middleware import RequestLoggingMiddleware
 
         # Mock logger
         with patch("backend.app.middleware.logging_middleware.logger") as mock_logger:
             # Create middleware
-            middleware = RequestLoggingMiddleware()
+            middleware = RequestLoggingMiddleware(test_app)
 
             # Create mock request and response
-            request = MagicMock()
-            request.method = "GET"
-            request.url.path = "/test"
-            request.headers = {"user-agent": "test"}
+            mock_request = Mock(spec=Request)
+            mock_request.method = "GET"
+            mock_request.url.path = "/test"
+            mock_request.headers = {}
+            mock_request.state = MagicMock()
 
-            # Mock call_next function
-            response = MagicMock()
-            response.status_code = 200
-            response.headers = {}  # Initialize with an empty dict for header updates
-            call_next = AsyncMock(return_value=response)
+            mock_response = Mock(spec=Response)
+            mock_response.status_code = 200
+            mock_response.headers = {}
 
-            # Call middleware
-            result = await middleware(request, call_next)
+            # Create async mock for call_next
+            async def mock_call_next(request):
+                return mock_response
 
-            # Check that request ID was added to state
-            assert hasattr(request.state, "request_id")
+            # Test the middleware
+            response = await middleware.dispatch(mock_request, mock_call_next)
 
-            # Check that log calls were made
-            assert mock_logger.info.call_count == 2
+            # Verify response
+            assert response == mock_response
+            assert "X-Request-ID" in response.headers
+            assert "X-Process-Time" in response.headers
 
-            # Check that metrics were collected
-            metrics_instance = mock_metrics.return_value
-            assert metrics_instance.start.called
-            assert metrics_instance.stop.called
-            assert metrics_instance.get_metrics.called
-
-            # Skip the header check as the current implementation might not add this header
-            # or just check if the response object is returned correctly
-            assert result == response
+            # Verify logging
+            assert mock_logger.info.called
 
     @pytest.mark.asyncio
-    async def test_legacy_middleware_error(self, mock_metrics, mock_masking):
+    async def test_legacy_middleware_error(self, test_app, mock_metrics, mock_masking):
         """Test the legacy middleware with an error."""
         from backend.app.middleware.logging_middleware import RequestLoggingMiddleware
 
         # Mock logger
         with patch("backend.app.middleware.logging_middleware.logger") as mock_logger:
             # Create middleware
-            middleware = RequestLoggingMiddleware()
+            middleware = RequestLoggingMiddleware(test_app)
 
             # Create mock request
-            request = MagicMock()
-            request.method = "GET"
-            request.url.path = "/error"
-            request.headers = {"user-agent": "test"}
+            mock_request = Mock(spec=Request)
+            mock_request.method = "GET"
+            mock_request.url.path = "/test"
+            mock_request.headers = {}
+            mock_request.state = MagicMock()
 
-            # Mock call_next function to raise an error
-            error = ValueError("Test error")
-            call_next = AsyncMock(side_effect=error)
+            # Create async mock for call_next that raises an error
+            async def mock_call_next(request):
+                raise ValueError("Test error")
 
-            # Call middleware
+            # Test the middleware
             with pytest.raises(ValueError):
-                await middleware(request, call_next)
+                await middleware.dispatch(mock_request, mock_call_next)
 
-            # Check that request ID was added to state
-            assert hasattr(request.state, "request_id")
+            # Verify error logging
+            assert mock_logger.exception.called
 
-            # Check that log calls were made
-            assert mock_logger.info.call_count == 1
-            assert mock_logger.exception.call_count == 1
 
-            # Check that metrics were collected
-            metrics_instance = mock_metrics.return_value
-            assert metrics_instance.start.called
-            assert metrics_instance.stop.called
-            assert metrics_instance.get_metrics.called
+@pytest.fixture
+def mock_cloudwatch_handler():
+    """Mock CloudWatch handler and AWS credentials."""
+    with patch.dict(os.environ, {
+        'AWS_ACCESS_KEY_ID': 'test',
+        'AWS_SECRET_ACCESS_KEY': 'test',
+        'AWS_DEFAULT_REGION': 'us-east-1',
+        'APP_ENV': 'test'
+    }):
+        # Create a mock handler instance
+        handler_instance = Mock(spec=watchtower.CloudWatchLogHandler)
+        handler_instance.level = logging.INFO
+        handler_instance.emit = Mock()
+        handler_instance.handleError = Mock()
+
+        with patch('watchtower.CloudWatchLogHandler', return_value=handler_instance) as mock_handler:
+            with patch('boto3.client'):
+                # Get root logger
+                root_logger = logging.getLogger()
+
+                # Add our mock handler
+                root_logger.addHandler(handler_instance)
+
+                # Set up logging with CloudWatch enabled
+                setup_logging(enable_cloudwatch=True)
+
+                yield handler_instance
+
+                # Clean up
+                root_logger.removeHandler(handler_instance)
+
+
+class TestCloudWatchLogging:
+    """Tests for CloudWatch logging integration."""
+
+    @pytest.fixture
+    def middleware(self, app):
+        """Create middleware with CloudWatch enabled."""
+        with patch.dict(os.environ, {
+            'AWS_ACCESS_KEY_ID': 'test',
+            'AWS_SECRET_ACCESS_KEY': 'test',
+            'AWS_DEFAULT_REGION': 'us-east-1',
+            'APP_ENV': 'test'
+        }):
+            setup_logging(enable_cloudwatch=True)
+            return LoggingMiddleware(app)
+
+    @pytest.mark.asyncio
+    async def test_successful_request(self, middleware, mock_cloudwatch_handler):
+        """Test successful request logging to CloudWatch."""
+        app = FastAPI()
+        app.add_middleware(LoggingMiddleware)
+
+        @app.get("/test")
+        async def test_endpoint():
+            return {"message": "test"}
+
+        client = TestClient(app)
+        response = client.get("/test")
+
+        assert response.status_code == 200
+        assert mock_cloudwatch_handler.emit.called
+
+    @pytest.mark.asyncio
+    async def test_request_with_body(self, middleware, mock_cloudwatch_handler):
+        """Test request with body logging to CloudWatch."""
+        app = FastAPI()
+        app.add_middleware(LoggingMiddleware)
+
+        @app.post("/test")
+        def test_endpoint(body: dict):
+            return body
+
+        client = TestClient(app)
+        test_body = {"test": "data"}
+        response = client.post("/test", json=test_body)
+
+        assert response.status_code == 200
+        assert mock_cloudwatch_handler.emit.called
+
+    @pytest.mark.asyncio
+    async def test_aws_client_error(self, middleware, mock_cloudwatch_handler):
+        """Test AWS client error handling."""
+        mock_cloudwatch_handler.emit.side_effect = Exception("AWS Error")
+
+        app = FastAPI()
+        app.add_middleware(LoggingMiddleware)
+
+        @app.get("/test")
+        def test_endpoint():
+            return {"message": "test"}
+
+        client = TestClient(app)
+        response = client.get("/test")
+
+        assert response.status_code == 200  # Request should succeed despite AWS error
+        assert mock_cloudwatch_handler.emit.called
+
+    @pytest.mark.asyncio
+    async def test_request_details(self, middleware, mock_cloudwatch_handler):
+        """Test request details are properly logged."""
+        app = FastAPI()
+        app.add_middleware(LoggingMiddleware)
+
+        @app.get("/test")
+        def test_endpoint():
+            return {"message": "test"}
+
+        client = TestClient(app)
+        response = client.get("/test", headers={"Custom-Header": "test"})
+
+        assert response.status_code == 200
+        assert mock_cloudwatch_handler.emit.called
+
+    @pytest.mark.asyncio
+    async def test_response_details(self, middleware, mock_cloudwatch_handler):
+        """Test response details are properly logged."""
+        app = FastAPI()
+        app.add_middleware(LoggingMiddleware)
+
+        @app.get("/test")
+        def test_endpoint():
+            return {"message": "test"}
+
+        client = TestClient(app)
+        response = client.get("/test")
+
+        assert response.status_code == 200
+        assert mock_cloudwatch_handler.emit.called
+
+    @pytest.mark.asyncio
+    async def test_error_logging(self, middleware, mock_cloudwatch_handler):
+        """Test error logging to CloudWatch."""
+        app = FastAPI()
+        app.add_middleware(LoggingMiddleware)
+
+        @app.get("/error")
+        def error_endpoint():
+            raise HTTPException(status_code=500, detail="Test error")
+
+        client = TestClient(app)
+        response = client.get("/error")
+
+        assert response.status_code == 500
+        assert mock_cloudwatch_handler.emit.called

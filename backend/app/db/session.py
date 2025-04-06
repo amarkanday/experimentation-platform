@@ -8,11 +8,12 @@ for the application.
 import os
 from typing import Generator
 from urllib.parse import urlparse
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 from backend.app.core.config import settings
 from backend.app.models.base import Base
+from backend.app.core.database_config import get_schema_name
 
 # Check for DATABASE_URI environment variable, otherwise use settings
 database_uri = os.getenv("DATABASE_URI")
@@ -59,6 +60,21 @@ def init_db() -> None:
     # Import all models here to ensure they are registered with the metadata
     from backend.app.models import user, experiment, feature_flag, event, assignment
 
+    # Get schema name
+    schema_name = get_schema_name()
+
+    # Create schema if it doesn't exist
+    with engine.connect() as conn:
+        conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema_name}"))
+        conn.execute(text("COMMIT"))
+
+        # Set search path
+        conn.execute(text(f"SET search_path TO {schema_name}"))
+        conn.execute(text("COMMIT"))
+
+    # Set schema for all tables
+    Base.metadata.schema = schema_name
+
     # Create tables
     Base.metadata.create_all(bind=engine)
 
@@ -68,6 +84,23 @@ def reset_db() -> None:
     # Import all models here to ensure they are registered with the metadata
     from backend.app.models import user, experiment, feature_flag, event, assignment
 
+    # Get schema name
+    schema_name = get_schema_name()
+
+    # Set schema for all tables
+    Base.metadata.schema = schema_name
+
     # Drop and recreate tables
     Base.metadata.drop_all(bind=engine)
+
+    # Create schema if it doesn't exist
+    with engine.connect() as conn:
+        conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema_name}"))
+        conn.execute(text("COMMIT"))
+
+        # Set search path
+        conn.execute(text(f"SET search_path TO {schema_name}"))
+        conn.execute(text("COMMIT"))
+
+    # Create tables
     Base.metadata.create_all(bind=engine)

@@ -208,10 +208,10 @@ async def create_experiment(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
     # Invalidate cache if enabled
-    if cache_control.get("enabled") and cache_control.get("client"):
+    if cache_control.enabled and cache_control.redis:
         pattern = f"experiments:{current_user.id}:*"
-        for key in cache_control["client"].scan_iter(match=pattern):
-            cache_control["client"].delete(key)
+        for key in cache_control.redis.scan_iter(match=pattern):
+            cache_control.redis.delete(key)
 
     return experiment
 
@@ -242,9 +242,9 @@ async def get_experiment(
         HTTPException 403: If user doesn't have access to this experiment
     """
     # Check cache first if enabled
-    if cache_control.get("enabled") and cache_control.get("client"):
+    if cache_control.enabled and cache_control.redis:
         cache_key = f"experiment:{experiment_id}"
-        cached_data = cache_control["client"].get(cache_key)
+        cached_data = cache_control.redis.get(cache_key)
         if cached_data:
             from pydantic import parse_raw_as
 
@@ -264,8 +264,8 @@ async def get_experiment(
     experiment = deps.get_experiment_access(experiment, current_user)
 
     # Cache result if enabled
-    if cache_control.get("enabled") and cache_control.get("client"):
-        cache_control["client"].setex(
+    if cache_control.enabled and cache_control.redis:
+        cache_control.redis.setex(
             f"experiment:{experiment_id}",
             3600,  # Cache for 1 hour
             ExperimentResponse.from_orm(experiment).json(),
@@ -343,16 +343,16 @@ async def update_experiment(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
     # Invalidate cache if enabled
-    if cache_control.get("enabled") and cache_control.get("client"):
+    if cache_control.enabled and cache_control.redis:
         # Delete specific experiment cache
         experiment_cache_key = f"experiment:{experiment_id}"
-        cache_control["client"].delete(experiment_cache_key)
+        cache_control.redis.delete(experiment_cache_key)
 
         # Delete experiment list caches
         owner_id = updated_experiment.owner_id
         pattern = f"experiments:{owner_id}:*"
-        for key in cache_control["client"].scan_iter(match=pattern):
-            cache_control["client"].delete(key)
+        for key in cache_control.redis.scan_iter(match=pattern):
+            cache_control.redis.delete(key)
 
     return ExperimentResponse.from_orm(updated_experiment)
 
@@ -436,16 +436,16 @@ async def delete_experiment(
     db.commit()
 
     # Invalidate cache if enabled
-    if cache_control.get("enabled") and cache_control.get("client"):
+    if cache_control.enabled and cache_control.redis:
         # Delete specific experiment cache
         experiment_cache_key = f"experiment:{experiment_id}"
-        cache_control["client"].delete(experiment_cache_key)
+        cache_control.redis.delete(experiment_cache_key)
 
         # Delete experiment list caches
         owner_id = experiment.owner_id
         pattern = f"experiments:{owner_id}:*"
-        for key in cache_control["client"].scan_iter(match=pattern):
-            cache_control["client"].delete(key)
+        for key in cache_control.redis.scan_iter(match=pattern):
+            cache_control.redis.delete(key)
 
     # Return 204 No Content
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -536,16 +536,16 @@ async def start_experiment(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
     # Invalidate cache if enabled
-    if cache_control.get("enabled") and cache_control.get("client"):
+    if cache_control.enabled and cache_control.redis:
         # Delete specific experiment cache
         experiment_cache_key = f"experiment:{experiment_id}"
-        cache_control["client"].delete(experiment_cache_key)
+        cache_control.redis.delete(experiment_cache_key)
 
         # Delete experiment list caches
         owner_id = started_experiment.owner_id
         pattern = f"experiments:{owner_id}:*"
-        for key in cache_control["client"].scan_iter(match=pattern):
-            cache_control["client"].delete(key)
+        for key in cache_control.redis.scan_iter(match=pattern):
+            cache_control.redis.delete(key)
 
     return ExperimentResponse.from_orm(started_experiment)
 
@@ -602,16 +602,16 @@ async def pause_experiment(
     db.refresh(experiment)
 
     # Invalidate cache if enabled
-    if cache_control.get("enabled") and cache_control.get("client"):
+    if cache_control.enabled and cache_control.redis:
         # Delete specific experiment cache
         experiment_cache_key = f"experiment:{experiment_id}"
-        cache_control["client"].delete(experiment_cache_key)
+        cache_control.redis.delete(experiment_cache_key)
 
         # Delete experiment list caches
         owner_id = experiment.owner_id
         pattern = f"experiments:{owner_id}:*"
-        for key in cache_control["client"].scan_iter(match=pattern):
-            cache_control["client"].delete(key)
+        for key in cache_control.redis.scan_iter(match=pattern):
+            cache_control.redis.delete(key)
 
     return ExperimentResponse.from_orm(experiment)
 
@@ -673,16 +673,16 @@ async def complete_experiment(
     db.refresh(experiment)
 
     # Invalidate cache if enabled
-    if cache_control.get("enabled") and cache_control.get("client"):
+    if cache_control.enabled and cache_control.redis:
         # Delete specific experiment cache
         experiment_cache_key = f"experiment:{experiment_id}"
-        cache_control["client"].delete(experiment_cache_key)
+        cache_control.redis.delete(experiment_cache_key)
 
         # Delete experiment list caches
         owner_id = experiment.owner_id
         pattern = f"experiments:{owner_id}:*"
-        for key in cache_control["client"].scan_iter(match=pattern):
-            cache_control["client"].delete(key)
+        for key in cache_control.redis.scan_iter(match=pattern):
+            cache_control.redis.delete(key)
 
     return ExperimentResponse.from_orm(experiment)
 
@@ -739,9 +739,9 @@ async def get_experiment_results(
         )
 
     # Try to get from cache if enabled
-    if cache_control.get("enabled") and cache_control.get("client"):
+    if cache_control.enabled and cache_control.redis:
         cache_key = f"experiment_results:{experiment_id}"
-        cached_data = cache_control["client"].get(cache_key)
+        cached_data = cache_control.redis.get(cache_key)
         if cached_data:
             from pydantic import parse_raw_as
 
@@ -757,8 +757,8 @@ async def get_experiment_results(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
     # Cache results if enabled
-    if cache_control.get("enabled") and cache_control.get("client"):
-        cache_control["client"].setex(
+    if cache_control.enabled and cache_control.redis:
+        cache_control.redis.setex(
             f"experiment_results:{experiment_id}",
             3600,  # Cache for 1 hour
             results.json(),
@@ -825,16 +825,16 @@ async def archive_experiment(
     archived_experiment = experiment_service.archive_experiment(experiment)
 
     # Invalidate cache if enabled
-    if cache_control.get("enabled") and cache_control.get("client"):
+    if cache_control.enabled and cache_control.redis:
         # Delete specific experiment cache
         experiment_cache_key = f"experiment:{experiment_id}"
-        cache_control["client"].delete(experiment_cache_key)
+        cache_control.redis.delete(experiment_cache_key)
 
         # Delete experiment list caches
         owner_id = archived_experiment.get("owner_id")
         pattern = f"experiments:{owner_id}:*"
-        for key in cache_control["client"].scan_iter(match=pattern):
-            cache_control["client"].delete(key)
+        for key in cache_control.redis.scan_iter(match=pattern):
+            cache_control.redis.delete(key)
 
     return ExperimentResponse.from_orm(experiment)
 
@@ -894,11 +894,11 @@ async def clone_experiment(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
     # Invalidate cache if enabled
-    if cache_control.get("enabled") and cache_control.get("client"):
+    if cache_control.enabled and cache_control.redis:
         # Delete experiment list caches
         pattern = f"experiments:{current_user.id}:*"
-        for key in cache_control["client"].scan_iter(match=pattern):
-            cache_control["client"].delete(key)
+        for key in cache_control.redis.scan_iter(match=pattern):
+            cache_control.redis.delete(key)
 
     return cloned_experiment
 
@@ -956,10 +956,10 @@ async def get_daily_experiment_results(
         )
 
     # Try to get from cache if enabled
-    if cache_control.get("enabled") and cache_control.get("client"):
+    if cache_control.enabled and cache_control.redis:
         metric_part = f":{metric_id}" if metric_id else ""
         cache_key = f"experiment_daily_results:{experiment_id}{metric_part}"
-        cached_data = cache_control["client"].get(cache_key)
+        cached_data = cache_control.redis.get(cache_key)
         if cached_data:
             import json
 
@@ -980,12 +980,12 @@ async def get_daily_experiment_results(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
     # Cache results if enabled
-    if cache_control.get("enabled") and cache_control.get("client"):
+    if cache_control.enabled and cache_control.redis:
         import json
 
         metric_part = f":{metric_id}" if metric_id else ""
         cache_key = f"experiment_daily_results:{experiment_id}{metric_part}"
-        cache_control["client"].setex(
+        cache_control.redis.setex(
             cache_key,
             3600,  # Cache for 1 hour
             json.dumps(results),
@@ -1049,12 +1049,12 @@ async def get_segmented_experiment_results(
         )
 
     # Try to get from cache if enabled
-    if cache_control.get("enabled") and cache_control.get("client"):
+    if cache_control.enabled and cache_control.redis:
         metric_part = f":{metric_id}" if metric_id else ""
         cache_key = (
             f"experiment_segmented_results:{experiment_id}:{segment_by}{metric_part}"
         )
-        cached_data = cache_control["client"].get(cache_key)
+        cached_data = cache_control.redis.get(cache_key)
         if cached_data:
             import json
 
@@ -1077,14 +1077,14 @@ async def get_segmented_experiment_results(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
     # Cache results if enabled
-    if cache_control.get("enabled") and cache_control.get("client"):
+    if cache_control.enabled and cache_control.redis:
         import json
 
         metric_part = f":{metric_id}" if metric_id else ""
         cache_key = (
             f"experiment_segmented_results:{experiment_id}:{segment_by}{metric_part}"
         )
-        cache_control["client"].setex(
+        cache_control.redis.setex(
             cache_key,
             3600,  # Cache for 1 hour
             json.dumps(results),
@@ -1154,10 +1154,10 @@ async def update_experiment_metadata(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
     # Invalidate cache if enabled
-    if cache_control.get("enabled") and cache_control.get("client"):
+    if cache_control.enabled and cache_control.redis:
         # Delete specific experiment cache
         experiment_cache_key = f"experiment:{experiment_id}"
-        cache_control["client"].delete(experiment_cache_key)
+        cache_control.redis.delete(experiment_cache_key)
 
     return updated_experiment
 

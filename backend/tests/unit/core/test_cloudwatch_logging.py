@@ -18,13 +18,22 @@ class MockCloudWatchHandler(logging.Handler):
         super().__init__()
         self.emit = MagicMock()
         self.handleError = MagicMock()
+        self.level = logging.NOTSET
+        self.formatter = None
 
     def handle(self, record):
         """Override handle to catch exceptions from emit."""
-        try:
-            self.emit(record)
-        except Exception as e:
-            self.handleError(record)
+        if self.filter(record) and record.levelno >= self.level:
+            try:
+                if self.formatter:
+                    record.msg = self.formatter.format(record)
+                self.emit(record)
+            except Exception as e:
+                self.handleError(record)
+
+    def setFormatter(self, fmt):
+        """Set the formatter for this handler."""
+        self.formatter = fmt
 
 @pytest.fixture(autouse=True)
 def clear_handlers():

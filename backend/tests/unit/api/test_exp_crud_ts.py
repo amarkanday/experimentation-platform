@@ -22,7 +22,7 @@ except ImportError as e:
             os.path.join(os.path.dirname(__file__), "../../../")
         )
         sys.path.append(project_root)
-        from app.main import app
+        from backend.app.main import app
 
         print("Successfully imported app from alternate path")
     except ImportError as e:

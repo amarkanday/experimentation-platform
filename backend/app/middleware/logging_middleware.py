@@ -129,10 +129,14 @@ class LoggingMiddleware(BaseHTTPMiddleware):
 
 
 # Keep the original for backward compatibility
-class RequestLoggingMiddleware:
+class RequestLoggingMiddleware(BaseHTTPMiddleware):
     """Middleware for logging request/response details (legacy version)."""
 
-    async def __call__(
+    def __init__(self, app: ASGIApp):
+        """Initialize the middleware."""
+        super().__init__(app)
+
+    async def dispatch(
         self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
         """Process the request and log details."""
