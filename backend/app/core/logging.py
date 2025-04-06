@@ -24,6 +24,7 @@ class CustomJsonFormatter(JsonFormatter):
     def __init__(self):
         """Initialize the formatter with default format and style."""
         fmt = '%(asctime)s %(name)s %(levelname)s %(message)s'
+        self._fmt = fmt  # Explicitly set _fmt before the super call
         self._style = logging.PercentStyle(fmt)  # Initialize style before super().__init__()
         super().__init__(
             fmt=fmt,
@@ -84,6 +85,11 @@ def setup_logging(
     # Add CloudWatch handler if enabled
     if enable_cloudwatch:
         try:
+            # Check if AWS credentials are available
+            if not os.getenv('AWS_ACCESS_KEY_ID'):
+                logger.warning("AWS credentials not found, CloudWatch logging disabled")
+                return logger
+
             aws_client = boto3.client('logs')
             app_env = os.getenv('APP_ENV', 'dev')
             log_group = f"/experimentation-platform/{app_env}"
@@ -100,6 +106,8 @@ def setup_logging(
             cloudwatch_handler.setLevel(level)  # Set the same level as root logger
             cloudwatch_handler.setFormatter(formatter)
             logger.addHandler(cloudwatch_handler)
+
+            # This log message should trigger an emit call
             logger.info("CloudWatch logging enabled")
         except Exception as e:
             logger.warning(f"Failed to initialize CloudWatch logging: {e}")
