@@ -1,6 +1,19 @@
 # Experimentation Platform Documentation
 
-This directory contains comprehensive documentation for the Experimentation Platform.
+This directory contains documentation for the experimentation platform project.
+
+## Contents
+
+- [Issue Fixes](issue_fixes/index.md) - Documentation of issues fixed and improvements made to the platform
+  - [Logging System Improvements](issue_fixes/logging_system_improvements.md)
+  - [Logging Middleware and CloudWatch Integration](issue_fixes/logging_middleware_fixes.md)
+  - [Feature Flag Testing](issue_fixes/feature_flag_testing.md)
+  - [Experiment Testing](issue_fixes/experiment_testing.md)
+  - And more...
+
+## Getting Started
+
+For installation instructions and getting started with the experimentation platform, please refer to the main [README.md](../README.md) file at the root of the repository.
 
 ## Directory Structure
 
@@ -148,15 +161,11 @@ docs/
 - [Log Insights Queries](monitoring/log-insights-queries.md)
 - [Troubleshooting Guide](monitoring/troubleshooting-guide.md)
 
-## Contributing to the Documentation
+## Contributing to Documentation
 
-We welcome contributions to improve this documentation. Please follow these guidelines:
-
-1. Place files in the appropriate directory based on their content
-2. Update this README.md with any new sections or files
-3. Follow the existing documentation style and format
-4. Include code examples where appropriate
-5. Add cross-references to related documentation
+1. Place new documentation in the appropriate subdirectory
+2. Update the relevant index files to link to your new documentation
+3. Follow the established markdown formatting patterns
 
 ## Documentation Style Guide
 

@@ -1,4 +1,22 @@
-# Logging System Fixes
+# Experimentation Platform Issue Fixes
+
+This directory contains documentation for various issues fixed in the experimentation platform project.
+
+## Logging System Fixes
+
+- [Logging System Improvements](logging_system_improvements.md) - Core logging system implementation fixes
+- [Logging Middleware and CloudWatch Integration](logging_middleware_fixes.md) - Fixes for the logging middleware and CloudWatch integration issues
+
+## Feature Tests and Validation Fixes
+
+- [Feature Flag Testing](feature_flag_testing.md) - Fixes for feature flag testing issues
+- [Experiment Testing](experiment_testing.md) - Improvements to experiment testing
+- [Request Validation](request_validation.md) - Fixes for request validation issues
+
+## Configuration Fixes
+
+- [FastAPI Configuration Issues](FastAPI_Config_Issues.md) - Fixes for FastAPI configuration problems
+- [CloudWatch Logging Tests](cloudwatch_logging_tests.md) - Improvements to CloudWatch logging tests
 
 ## Overview
 Fixed several issues in the logging system implementation to improve test coverage and functionality.
