@@ -4,146 +4,93 @@ Test configuration for the experimentation platform.
 
 This module sets up fixtures and configuration for pytest.
 """
-import pytest
 import os
 import logging
+from typing import Generator
+
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker, scoped_session
-from sqlalchemy.orm import configure_mappers
+from sqlalchemy.orm import sessionmaker, Session, configure_mappers
+from sqlalchemy.exc import ProgrammingError
 
+from backend.app.core.config import settings, TestSettings
+from backend.app.core.database_config import get_schema_name
+from backend.app.db.base import Base
 from backend.app.main import app
-from backend.app.db.session import get_db, Base, init_db
-from backend.app.api import deps
+from backend.app.api.deps import get_db
+from backend.app.api import deps  # Added for mock fixtures
 from backend.app.models.user import User
 from backend.app.models.experiment import Experiment, ExperimentStatus
-from backend.app.core.database_config import get_schema_name
-from backend.app.core.config import settings, TestSettings
 from backend.app.models.base import set_schema
 
 logger = logging.getLogger(__name__)
 
 
 @pytest.fixture(scope="session", autouse=True)
-def configure_all_mappers():
-    """Configure all mappers before any tests run."""
+def configure_all_mappers() -> None:
+    """Configure all mappers before any database operations."""
     configure_mappers()
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="session")
 def setup_test_environment():
-    """Set up the test environment before any tests run."""
-    # Set environment variables for testing
-    os.environ["APP_ENV"] = "test"
-    os.environ["TESTING"] = "true"
-
-    # Initialize test settings
-    global settings
-    settings = TestSettings()
-
-    # Set schema for all tables
-    set_schema()
-
-    yield
-
-    # Clean up
-    os.environ.pop("APP_ENV", None)
-    os.environ.pop("TESTING", None)
+    """Set up test environment variables."""
+    os.environ["TESTING"] = "1"
+    os.environ["POSTGRES_DB"] = "test_db"
+    os.environ["POSTGRES_USER"] = "test_user"
+    os.environ["POSTGRES_PASSWORD"] = "test_password"
+    os.environ["POSTGRES_HOST"] = "localhost"
+    os.environ["POSTGRES_PORT"] = "5432"
 
 
 @pytest.fixture(scope="session")
-def test_db():
-    """Create test database and schema."""
-    # Use PostgreSQL instead of SQLite to handle JSON columns properly
-    db_url = os.environ.get(
-        "TEST_DATABASE_URL",
-        "postgresql://postgres:postgres@localhost:5432/experimentation_test_models",
-    )
+def test_db(setup_test_environment):
+    """Create a test database and set up tables."""
+    schema_name = get_schema_name()
+    database_url = f"postgresql://test_user:test_password@localhost:5432/test_db"
+    engine = create_engine(database_url, isolation_level="AUTOCOMMIT")
 
-    # Create the test database
     try:
-        # Connect to default database to create test database
-        temp_engine = create_engine(
-            db_url.replace("experimentation_test_models", "postgres")
-        )
-        with temp_engine.connect() as conn:
-            conn.execute(text("COMMIT"))
-
-            # Force close all connections to the test database
-            conn.execute(text("""
-                SELECT pg_terminate_backend(pg_stat_activity.pid)
-                FROM pg_stat_activity
-                WHERE pg_stat_activity.datname = 'experimentation_test_models'
-                AND pid <> pg_backend_pid()
-            """))
-            conn.execute(text("COMMIT"))
-
-            # Now drop and recreate the database
-            conn.execute(text("DROP DATABASE IF EXISTS experimentation_test_models"))
-            conn.execute(text("CREATE DATABASE experimentation_test_models"))
-            conn.execute(text("COMMIT"))
-
-        # Create engine for test database
-        engine = create_engine(db_url)
-
-        # Initialize database with schema and tables
-        os.environ["DATABASE_URI"] = db_url
-        os.environ["APP_ENV"] = "test"
-        os.environ["TESTING"] = "true"
-
-        # Create schema and tables
+        # Try to connect first
         with engine.connect() as conn:
-            schema_name = "test_experimentation"
-            conn.execute(text(f"DROP SCHEMA IF EXISTS {schema_name} CASCADE"))
-            conn.execute(text(f"CREATE SCHEMA {schema_name}"))
-            conn.execute(text(f"SET search_path TO {schema_name}"))
-            conn.execute(text("COMMIT"))
+            # Create schema if it doesn't exist
+            try:
+                conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema_name}"))
+                conn.commit()
+            except ProgrammingError as e:
+                logger.warning(f"Schema creation error (may already exist): {e}")
 
-            # Import all models to ensure they are registered with the metadata
-            from backend.app.models import user, experiment, feature_flag, event, assignment
-
-            # Set schema for all tables
-            Base.metadata.schema = schema_name
-
-            # Create tables
-            Base.metadata.create_all(bind=engine)
+        # Create all tables
+        Base.metadata.create_all(bind=engine)
 
         yield engine
 
-        # Cleanup after all tests
-        with temp_engine.connect() as conn:
-            conn.execute(text("COMMIT"))
-
-            # Force close all connections again before final cleanup
-            conn.execute(text("""
-                SELECT pg_terminate_backend(pg_stat_activity.pid)
-                FROM pg_stat_activity
-                WHERE pg_stat_activity.datname = 'experimentation_test_models'
-                AND pid <> pg_backend_pid()
-            """))
-            conn.execute(text("COMMIT"))
-
-            conn.execute(text("DROP DATABASE IF EXISTS experimentation_test_models"))
-            conn.execute(text("COMMIT"))
+        # Cleanup - Drop the entire schema with CASCADE to handle all dependencies
+        with engine.connect() as conn:
+            conn.execute(text(f"DROP SCHEMA IF EXISTS {schema_name} CASCADE"))
+            conn.commit()
+            # Recreate empty schema for next test run
+            conn.execute(text(f"CREATE SCHEMA {schema_name}"))
+            conn.commit()
 
     except Exception as e:
-        print(f"Error setting up test database: {e}")
+        logger.error(f"Error in test database setup/cleanup: {e}")
         raise
 
 
 @pytest.fixture(scope="function")
-def db_session(test_db):
-    """Create a fresh database session for a test."""
+def db_session(test_db) -> Generator[Session, None, None]:
+    """Create a new database session for a test."""
     connection = test_db.connect()
     transaction = connection.begin()
 
-    # Create session bound to this connection
-    Session = sessionmaker(bind=connection)
-    session = Session()
+    # Create session with specific schema
+    session_factory = sessionmaker(bind=connection)
+    session = session_factory()
 
-    # Set schema for the session
-    session.execute(text("SET search_path TO test_experimentation"))
-    session.commit()
+    # Set schema globally
+    set_schema()
 
     try:
         yield session
@@ -153,31 +100,35 @@ def db_session(test_db):
         connection.close()
 
 
-@pytest.fixture
-def client(db_session):
-    """Create a test client for the FastAPI application."""
-    # Override the get_db dependency
-    def override_get_db():
+@pytest.fixture(scope="function")
+def client(db_session: Session) -> Generator[TestClient, None, None]:
+    """Create a test client with database session override."""
+    def override_get_db() -> Generator[Session, None, None]:
         try:
             yield db_session
         finally:
-            pass
+            db_session.close()
 
-    # Set up dependency overrides
     app.dependency_overrides[get_db] = override_get_db
-    app.dependency_overrides[deps.get_db] = override_get_db
-
-    # Create a test client
-    with TestClient(app) as client:
-        yield client
-
-    # Clean up dependency overrides
-    app.dependency_overrides = {}
+    with TestClient(app) as test_client:
+        yield test_client
+    app.dependency_overrides.clear()
 
 
 @pytest.fixture
 def normal_user(db_session):
     """Create a normal user for testing."""
+    # First clean up any existing test user
+    try:
+        existing_user = db_session.query(User).filter(User.username == "testuser").first()
+        if existing_user:
+            db_session.delete(existing_user)
+            db_session.commit()
+    except Exception as e:
+        db_session.rollback()
+        logger.warning(f"Error cleaning up existing test user: {e}")
+
+    # Create new test user
     user = User(
         username="testuser",
         email="testuser@example.com",
@@ -189,12 +140,32 @@ def normal_user(db_session):
     db_session.add(user)
     db_session.commit()
     db_session.refresh(user)
-    return user
+
+    yield user
+
+    # Cleanup after test
+    try:
+        db_session.delete(user)
+        db_session.commit()
+    except Exception as e:
+        db_session.rollback()
+        logger.warning(f"Error cleaning up test user: {e}")
 
 
 @pytest.fixture
 def superuser(db_session):
     """Create a superuser for testing."""
+    # First clean up any existing admin user
+    try:
+        existing_user = db_session.query(User).filter(User.username == "admin").first()
+        if existing_user:
+            db_session.delete(existing_user)
+            db_session.commit()
+    except Exception as e:
+        db_session.rollback()
+        logger.warning(f"Error cleaning up existing admin user: {e}")
+
+    # Create new admin user
     user = User(
         username="admin",
         email="admin@example.com",
@@ -206,7 +177,16 @@ def superuser(db_session):
     db_session.add(user)
     db_session.commit()
     db_session.refresh(user)
-    return user
+
+    yield user
+
+    # Cleanup after test
+    try:
+        db_session.delete(user)
+        db_session.commit()
+    except Exception as e:
+        db_session.rollback()
+        logger.warning(f"Error cleaning up admin user: {e}")
 
 
 @pytest.fixture

@@ -15,6 +15,7 @@ from sqlalchemy.ext.declarative import declared_attr
 
 from .base import Base, BaseModel
 from backend.app.core.database_config import get_schema_name
+from backend.app.core.permissions import UserRole
 import typing
 
 
@@ -80,6 +81,7 @@ class User(Base, BaseModel):
     full_name = Column(String(100))
     is_active = Column(Boolean, default=True, nullable=False)
     is_superuser = Column(Boolean, default=False, nullable=False)
+    role = Column(Enum(UserRole), default=UserRole.USER, nullable=False)
     last_login = Column(DateTime)
     preferences = Column(JSONB, default={})
 

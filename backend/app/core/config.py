@@ -7,7 +7,7 @@ and sensible defaults.
 
 import os
 import secrets
-from typing import Dict, List, Union, Optional
+from typing import Dict, List, Union, Optional, Any
 from pydantic import BaseSettings, PostgresDsn, validator, AnyHttpUrl
 
 
@@ -61,8 +61,8 @@ class Settings(BaseSettings):
     # Logging configuration
     LOG_LEVEL: str = "INFO"
 
-    @validator("DATABASE_URI", pre=True, allow_reuse=True)
-    def assemble_db_connection(cls, v: Optional[str], values: Dict[str, any]) -> any:
+    @validator("DATABASE_URI", pre=True)
+    def assemble_db_connection(cls, v: Optional[str], values: Dict[str, Any]) -> Any:
         """
         Assemble database connection string if not provided directly.
 
@@ -85,10 +85,8 @@ class Settings(BaseSettings):
             path=f"/{values.get('POSTGRES_DB') or ''}",
         )
 
-    @validator("SQLALCHEMY_DATABASE_URI", pre=True, allow_reuse=True)
-    def assemble_sqlalchemy_connection(
-        cls, v: Optional[str], values: Dict[str, any]
-    ) -> any:
+    @validator("SQLALCHEMY_DATABASE_URI", pre=True)
+    def assemble_sqlalchemy_connection(cls, v: Optional[str], values: Dict[str, Any]) -> Any:
         """
         Assemble SQLAlchemy database connection string if not provided directly.
 
@@ -102,22 +100,16 @@ class Settings(BaseSettings):
         if isinstance(v, str):
             return v
 
-        # If DATABASE_URI is set, use that
-        database_uri = values.get("DATABASE_URI")
-        if database_uri:
-            return database_uri
-
-        # Otherwise build from components
-        return PostgresDsn.build(
+        return str(PostgresDsn.build(
             scheme="postgresql",
             user=values.get("POSTGRES_USER"),
             password=values.get("POSTGRES_PASSWORD"),
             host=values.get("POSTGRES_SERVER"),
             port=values.get("POSTGRES_PORT"),
             path=f"/{values.get('POSTGRES_DB') or ''}",
-        )
+        ))
 
-    @validator("CORS_ORIGINS", pre=True, allow_reuse=True)
+    @validator("CORS_ORIGINS", pre=True)
     def assemble_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:
         """
         Parse CORS origins from string or list.
@@ -128,13 +120,9 @@ class Settings(BaseSettings):
         Returns:
             List of allowed origins
         """
-        if isinstance(v, str) and not v.startswith("["):
+        if isinstance(v, str):
             return [i.strip() for i in v.split(",")]
-
-        if isinstance(v, (list, str)):
-            return v
-
-        raise ValueError(v)
+        return v
 
     class Config:
         """Pydantic config."""
@@ -164,6 +152,9 @@ class DevSettings(Settings):
     POSTGRES_PASSWORD: str = "postgres"
     POSTGRES_DB: str = "experimentation"
 
+    # Add POSTGRES_SCHEMA setting
+    POSTGRES_SCHEMA: str = "public"
+
     class Config:
         """Pydantic config for development."""
 
@@ -178,7 +169,7 @@ class TestSettings(Settings):
     LOG_LEVEL: str = "DEBUG"
     PROJECT_NAME: str = "Experimentation Platform"
     PROJECT_DESCRIPTION: str = "API for managing experiments and feature flags in test environment"
-    POSTGRES_DB: str = "experimentation"
+    POSTGRES_DB: str = "test_experimentation"
 
     class Config:
         """Pydantic config for testing."""

@@ -103,16 +103,14 @@ class EventRequest(BaseModel):
         }
 
     @root_validator
-    def validate_experiment_or_feature_flag(cls, values):
+    def validate_experiment_or_feature_flag(cls, values: Dict[str, Any]) -> Dict[str, Any]:
         """Validate that at least one of experiment_key or feature_flag_key is provided."""
         experiment_key = values.get("experiment_key")
         feature_flag_key = values.get("feature_flag_key")
-
         if experiment_key is None and feature_flag_key is None:
             raise ValueError(
                 "Either experiment_key or feature_flag_key must be provided"
             )
-
         return values
 
 

@@ -19,8 +19,14 @@ def set_schema():
     """Set the schema for all tables."""
     schema = get_schema_name()
     metadata.schema = schema
+    # Clear any existing tables to ensure schema is set correctly
+    metadata.clear()
+    # Import all models to ensure they are registered with the metadata
+    from backend.app.models import user, experiment, feature_flag, event, assignment
+    # Set schema for all tables
     for table in metadata.tables.values():
         table.schema = schema
+    return schema
 
 class BaseModel:
     """

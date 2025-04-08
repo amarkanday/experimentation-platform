@@ -21,8 +21,10 @@ from fastapi import (
     Response,
 )
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
 
 from backend.app.api import deps
+from backend.app.core.config import settings
 from backend.app.models.user import User
 from backend.app.models.experiment import Experiment, ExperimentStatus
 from backend.app.schemas.experiment import (
@@ -32,8 +34,9 @@ from backend.app.schemas.experiment import (
     ExperimentListResponse,
     ExperimentResults,
 )
-from backend.app.services.experiment_service import ExperimentService
+from backend.app.services.experiment import ExperimentService
 from backend.app.services.analysis_service import AnalysisService
+from backend.app.services.cache import CacheService
 
 # Create router with tag for documentation grouping
 router = APIRouter(
@@ -125,38 +128,22 @@ async def list_experiments(
     Returns:
         ExperimentListResponse: Paginated list of experiments with total count
     """
-    # Create experiment service
-    experiment_service = ExperimentService(db)
-
-    # Query experiments based on user permissions
-    if current_user.is_superuser:
-        experiments = experiment_service.get_experiments(
-            skip=skip,
-            limit=limit,
-            status=status_filter,
-            search=search,
-            sort_by=sort_by,
-            sort_order=sort_order,
-        )
-        total = experiment_service.count_experiments(
-            status=status_filter, search=search
-        )
-    else:
-        # Filter by owner for regular users
-        experiments = experiment_service.get_experiments_by_owner(
-            owner_id=current_user.id,
-            skip=skip,
-            limit=limit,
-            status=status_filter,
-            search=search,
-            sort_by=sort_by,
-            sort_order=sort_order,
-        )
-        total = experiment_service.count_experiments_by_owner(
-            owner_id=current_user.id, status=status_filter, search=search
-        )
-
-    # Create response
+    experiments = ExperimentService.list_experiments(
+        db=db,
+        user=current_user,
+        skip=skip,
+        limit=limit,
+        status=status_filter,
+        search=search,
+        sort_by=sort_by,
+        sort_order=sort_order,
+    )
+    total = ExperimentService.count_experiments(
+        db=db,
+        user=current_user,
+        status=status_filter,
+        search=search,
+    )
     return ExperimentListResponse(
         items=experiments, total=total, skip=skip, limit=limit
     )
@@ -181,31 +168,24 @@ async def create_experiment(
     Create a new experiment.
     This endpoint allows users to create a new experiment. The current user
     is automatically set as the owner of the experiment.
+
     The request must include:
     - Basic experiment information (name, description, hypothesis)
     - At least two variants (one must be marked as control)
     - At least one metric to track
     The experiment is created in DRAFT status by default.
+
     Returns:
         ExperimentResponse: The newly created experiment with all details
     Raises:
         HTTPException: If the experiment data is invalid or creation fails
+        HTTPException 403: If the user doesn't have permission to create experiments
     """
-    # Create experiment service
-    experiment_service = ExperimentService(db)
-
-    # Set owner_id to current user
-    experiment_data = experiment_in.dict()
-    experiment_data["owner_id"] = current_user.id
-
-    # Create experiment
-    try:
-        experiment = experiment_service.create_experiment(
-            obj_in=ExperimentCreate(**experiment_data),
-            user_id=current_user.id,  # Add the user_id parameter
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    experiment = ExperimentService.create_experiment(
+        db=db,
+        user=current_user,
+        experiment_in=experiment_in,
+    )
 
     # Invalidate cache if enabled
     if cache_control.enabled and cache_control.redis:
@@ -250,18 +230,15 @@ async def get_experiment(
 
             return parse_raw_as(ExperimentResponse, cached_data)
 
-    # Create experiment service
-    experiment_service = ExperimentService(db)
-
-    # Get experiment
-    experiment = experiment_service.get_experiment_by_id(experiment_id)
+    experiment = ExperimentService.get_experiment(
+        db=db,
+        user=current_user,
+        experiment_id=experiment_id,
+    )
     if not experiment:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Experiment not found"
         )
-
-    # Check access permission
-    experiment = deps.get_experiment_access(experiment, current_user)
 
     # Cache result if enabled
     if cache_control.enabled and cache_control.redis:
@@ -290,57 +267,53 @@ async def update_experiment(
     cache_control: Dict[str, Any] = Depends(deps.get_cache_control),
 ) -> ExperimentResponse:
     """
-    Update an experiment.
+    Update an existing experiment.
 
-    This endpoint allows users to update an existing experiment.
-    The user must have access to the experiment (be the owner or have permission).
-
-    Fields that can be updated include:
+    This endpoint allows updating experiment details, including:
     - Basic information (name, description, hypothesis)
-    - Variants (if the experiment is in DRAFT status)
-    - Metrics (if the experiment is in DRAFT status)
-    - Status (with certain transitions restricted)
+    - Variants (if the experiment is in draft status)
+    - Metrics (if the experiment is in draft status)
+    - Targeting rules
+    - Tags
+
+    Requires UPDATE permission on EXPERIMENT resource.
 
     Returns:
         ExperimentResponse: The updated experiment with all details
-
-    Raises:
-        HTTPException 400: If the update data is invalid
-        HTTPException 403: If updating a running experiment with restricted changes
     """
-    # Get experiment
-    experiment = db.query(Experiment).filter(Experiment.id == experiment_id).first()
+    experiment = ExperimentService.get_experiment(
+        db=db,
+        user=current_user,
+        experiment_id=experiment_id,
+    )
     if not experiment:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Experiment not found"
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Experiment not found",
         )
 
-    # Check access permission
-    experiment = deps.get_experiment_access(experiment, current_user)
-
-    # Create experiment service
-    experiment_service = ExperimentService(db)
-
-    # Restrict certain updates based on experiment status
-    if experiment.status != ExperimentStatus.DRAFT:
-        if "variants" in experiment_in.dict(exclude_unset=True):
+    # Check if variants or metrics are being updated
+    if "variants" in experiment_in.dict(exclude_unset=True):
+        if experiment.status != ExperimentStatus.DRAFT:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot update variants for experiments that are not in DRAFT status",
+                detail="Cannot update variants for experiments that are not in draft status",
             )
-        if "metrics" in experiment_in.dict(exclude_unset=True):
+
+    if "metrics" in experiment_in.dict(exclude_unset=True):
+        if experiment.status != ExperimentStatus.DRAFT:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot update metrics for experiments that are not in DRAFT status",
+                detail="Cannot update metrics for experiments that are not in draft status",
             )
 
     # Update experiment
-    try:
-        updated_experiment = experiment_service.update_experiment(
-            experiment, experiment_in
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    updated_experiment = ExperimentService.update_experiment(
+        db=db,
+        user=current_user,
+        experiment=experiment,
+        experiment_in=experiment_in,
+    )
 
     # Invalidate cache if enabled
     if cache_control.enabled and cache_control.redis:
@@ -401,7 +374,7 @@ async def delete_experiment(
     Delete an experiment.
 
     This endpoint allows users to delete an existing experiment.
-    The user must have access to the experiment (be the owner or have permission).
+    The user must have DELETE permission on the EXPERIMENT resource.
 
     Deleting an experiment has the following effects:
     - The experiment and all its related data (variants, metrics) are permanently removed
@@ -417,23 +390,17 @@ async def delete_experiment(
         HTTPException 403: If the user doesn't have permission to delete this experiment
         HTTPException 404: If the experiment doesn't exist
     """
-    # Get experiment
-    experiment = db.query(Experiment).filter(Experiment.id == experiment_id).first()
+    experiment = ExperimentService.get_experiment(
+        db=db,
+        user=current_user,
+        experiment_id=experiment_id,
+    )
     if not experiment:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Experiment not found"
         )
 
-    # Check if the user is either the owner or a superuser
-    if experiment.owner_id != current_user.id and not current_user.is_superuser:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You must be the owner or a superuser to delete this experiment",
-        )
-
-    # Delete experiment
-    db.delete(experiment)
-    db.commit()
+    ExperimentService.delete_experiment(db=db, experiment=experiment)
 
     # Invalidate cache if enabled
     if cache_control.enabled and cache_control.redis:
@@ -468,6 +435,7 @@ async def start_experiment(
 
     This endpoint activates an experiment, changing its status to ACTIVE
     and setting the start date if not already set.
+    The user must have UPDATE permission on the EXPERIMENT resource.
 
     Starting an experiment makes it eligible for:
     - User traffic assignment
@@ -485,19 +453,17 @@ async def start_experiment(
     Raises:
         HTTPException 400: If the experiment cannot be started
         HTTPException 403: If the user doesn't have permission to start this experiment
+        HTTPException 404: If the experiment is not found
     """
-    # Get experiment
-    experiment = db.query(Experiment).filter(Experiment.id == experiment_id).first()
+    experiment = ExperimentService.get_experiment(
+        db=db,
+        user=current_user,
+        experiment_id=experiment_id,
+    )
     if not experiment:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Experiment not found"
         )
-
-    # Check access permission
-    experiment = deps.get_experiment_access(experiment, current_user)
-
-    # Create experiment service
-    experiment_service = ExperimentService(db)
 
     # Check if experiment can be started
     if (
@@ -530,10 +496,11 @@ async def start_experiment(
         )
 
     # Start experiment
-    try:
-        started_experiment = experiment_service.start_experiment(experiment)
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    started_experiment = ExperimentService.start_experiment(
+        db=db,
+        user=current_user,
+        experiment=experiment,
+    )
 
     # Invalidate cache if enabled
     if cache_control.enabled and cache_control.redis:
@@ -579,15 +546,15 @@ async def pause_experiment(
         HTTPException 400: If the experiment cannot be paused
         HTTPException 403: If the user doesn't have permission to pause this experiment
     """
-    # Get experiment
-    experiment = db.query(Experiment).filter(Experiment.id == experiment_id).first()
+    experiment = ExperimentService.get_experiment(
+        db=db,
+        user=current_user,
+        experiment_id=experiment_id,
+    )
     if not experiment:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Experiment not found"
         )
-
-    # Check access permission
-    experiment = deps.get_experiment_access(experiment, current_user)
 
     # Check if experiment can be paused
     if experiment.status != ExperimentStatus.ACTIVE:
@@ -649,15 +616,15 @@ async def complete_experiment(
         HTTPException 400: If the experiment cannot be completed
         HTTPException 403: If the user doesn't have permission to complete this experiment
     """
-    # Get experiment
-    experiment = db.query(Experiment).filter(Experiment.id == experiment_id).first()
+    experiment = ExperimentService.get_experiment(
+        db=db,
+        user=current_user,
+        experiment_id=experiment_id,
+    )
     if not experiment:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Experiment not found"
         )
-
-    # Check access permission
-    experiment = deps.get_experiment_access(experiment, current_user)
 
     # Check if experiment is in a valid state to be completed
     if experiment.status not in [ExperimentStatus.ACTIVE, ExperimentStatus.PAUSED]:
@@ -702,40 +669,35 @@ async def get_experiment_results(
     cache_control: Dict[str, Any] = Depends(deps.get_cache_control),
 ) -> ExperimentResults:
     """
-    Get experiment results and statistical analysis.
+    Get experiment results and analysis.
 
-    This endpoint retrieves the analytical results of an experiment, including:
-    - Metric values for control and treatment variants
-    - Statistical significance calculations
-    - Sample sizes
-    - Recommendations based on the data
+    This endpoint provides detailed results for an experiment, including:
+    - Primary and secondary metric results
+    - Statistical significance
+    - Confidence intervals
+    - Sample sizes and power analysis
 
-    The results are calculated in real-time based on the latest data.
-    For experiments with insufficient data, the statistical significance
-    may be inconclusive.
+    Requires READ permission on EXPERIMENT resource.
 
     Returns:
-        ExperimentResults: Complete analysis of the experiment results
-
-    Raises:
-        HTTPException 400: If the experiment has no data or is in DRAFT status
-        HTTPException 403: If the user doesn't have permission to view this experiment
+        ExperimentResults: Detailed experiment results and analysis
     """
-    # Get experiment
-    experiment = db.query(Experiment).filter(Experiment.id == experiment_id).first()
+    experiment = ExperimentService.get_experiment(
+        db=db,
+        user=current_user,
+        experiment_id=experiment_id,
+    )
     if not experiment:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Experiment not found"
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Experiment not found",
         )
-
-    # Check access permission
-    experiment = deps.get_experiment_access(experiment, current_user)
 
     # Check if experiment has results
     if experiment.status == ExperimentStatus.DRAFT:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot get results for experiments in DRAFT status",
+            detail="Cannot get results for experiments in draft status",
         )
 
     # Try to get from cache if enabled
@@ -747,14 +709,12 @@ async def get_experiment_results(
 
             return parse_raw_as(ExperimentResults, cached_data)
 
-    # Create experiment service
-    experiment_service = ExperimentService(db)
-
     # Calculate results
-    try:
-        results = experiment_service.calculate_results(experiment_id)
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    results = ExperimentService.calculate_results(
+        db=db,
+        user=current_user,
+        experiment_id=experiment_id,
+    )
 
     # Cache results if enabled
     if cache_control.enabled and cache_control.redis:
@@ -801,15 +761,15 @@ async def archive_experiment(
         HTTPException 400: If the experiment is already archived
         HTTPException 403: If the user doesn't have permission to archive this experiment
     """
-    # Get experiment
-    experiment = db.query(Experiment).filter(Experiment.id == experiment_id).first()
+    experiment = ExperimentService.get_experiment(
+        db=db,
+        user=current_user,
+        experiment_id=experiment_id,
+    )
     if not experiment:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Experiment not found"
         )
-
-    # Check access permission
-    experiment = deps.get_experiment_access(experiment, current_user)
 
     # Check if experiment is already archived
     if experiment.status == ExperimentStatus.ARCHIVED:
@@ -818,11 +778,12 @@ async def archive_experiment(
             detail="Experiment is already archived",
         )
 
-    # Create experiment service
-    experiment_service = ExperimentService(db)
-
     # Archive experiment
-    archived_experiment = experiment_service.archive_experiment(experiment)
+    archived_experiment = ExperimentService.archive_experiment(
+        db=db,
+        user=current_user,
+        experiment=experiment,
+    )
 
     # Invalidate cache if enabled
     if cache_control.enabled and cache_control.redis:
@@ -872,26 +833,22 @@ async def clone_experiment(
         HTTPException 403: If the user doesn't have permission to view the source experiment
         HTTPException 404: If the source experiment doesn't exist
     """
-    # Get source experiment
-    experiment = db.query(Experiment).filter(Experiment.id == experiment_id).first()
+    experiment = ExperimentService.get_experiment(
+        db=db,
+        user=current_user,
+        experiment_id=experiment_id,
+    )
     if not experiment:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Experiment not found"
         )
 
-    # Check access permission for source experiment
-    experiment = deps.get_experiment_access(experiment, current_user)
-
-    # Create experiment service
-    experiment_service = ExperimentService(db)
-
     # Clone experiment
-    try:
-        cloned_experiment = experiment_service.clone_experiment(
-            experiment, current_user.id
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    cloned_experiment = ExperimentService.clone_experiment(
+        db=db,
+        user=current_user,
+        experiment=experiment,
+    )
 
     # Invalidate cache if enabled
     if cache_control.enabled and cache_control.redis:
@@ -921,38 +878,34 @@ async def get_daily_experiment_results(
     cache_control: Dict[str, Any] = Depends(deps.get_cache_control),
 ) -> List[Dict[str, Any]]:
     """
-    Get experiment results broken down by day.
+    Get daily experiment results.
 
-    This endpoint retrieves the analytical results of an experiment by day, including:
+    This endpoint provides experiment results broken down by day, including:
     - Daily conversion rates for each variant
     - Daily sample sizes
-    - Trend analysis over time
+    - Cumulative metrics
 
-    This is useful for visualizing how the experiment is performing over time
-    and identifying any temporal patterns or anomalies.
+    Requires READ permission on EXPERIMENT resource.
 
     Returns:
-        List[Dict[str, Any]]: List of daily result objects
-
-    Raises:
-        HTTPException 400: If the experiment has no data or is in DRAFT status
-        HTTPException 403: If the user doesn't have permission to view this experiment
+        List[Dict[str, Any]]: List of daily results
     """
-    # Get experiment
-    experiment = db.query(Experiment).filter(Experiment.id == experiment_id).first()
+    experiment = ExperimentService.get_experiment(
+        db=db,
+        user=current_user,
+        experiment_id=experiment_id,
+    )
     if not experiment:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Experiment not found"
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Experiment not found",
         )
-
-    # Check access permission
-    experiment = deps.get_experiment_access(experiment, current_user)
 
     # Check if experiment has results
     if experiment.status == ExperimentStatus.DRAFT:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot get results for experiments in DRAFT status",
+            detail="Cannot get results for experiments in draft status",
         )
 
     # Try to get from cache if enabled
@@ -965,19 +918,13 @@ async def get_daily_experiment_results(
 
             return json.loads(cached_data)
 
-    # Create analysis service
-    analysis_service = AnalysisService(db)
-
     # Get daily results
-    try:
-        if metric_id:
-            results = analysis_service.get_daily_results(
-                experiment_id=experiment_id, metric_id=metric_id
-            )
-        else:
-            results = analysis_service.get_daily_results(experiment_id=experiment_id)
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    results = ExperimentService.get_daily_results(
+        db=db,
+        user=current_user,
+        experiment_id=experiment_id,
+        metric_id=metric_id,
+    )
 
     # Cache results if enabled
     if cache_control.enabled and cache_control.redis:
@@ -1015,37 +962,32 @@ async def get_segmented_experiment_results(
     cache_control: Dict[str, Any] = Depends(deps.get_cache_control),
 ) -> Dict[str, Any]:
     """
-    Get experiment results segmented by a specific property.
+    Get experiment results segmented by a property.
 
-    This endpoint retrieves the analytical results of an experiment segmented
-    by a specific property such as country, device, browser, etc.
+    This endpoint provides experiment results broken down by a specific property such as
+    country, device, browser, etc.
 
-    This is useful for understanding how the experiment performs for different
-    user segments and identifying any variations in the experiment's effect
-    across different user populations.
+    Requires READ permission on EXPERIMENT resource.
 
     Returns:
-        Dict[str, Any]: Segmented results object
-
-    Raises:
-        HTTPException 400: If the experiment has no data or is in DRAFT status
-        HTTPException 403: If the user doesn't have permission to view this experiment
+        Dict[str, Any]: Segmented results for each value of the property
     """
-    # Get experiment
-    experiment = db.query(Experiment).filter(Experiment.id == experiment_id).first()
+    experiment = ExperimentService.get_experiment(
+        db=db,
+        user=current_user,
+        experiment_id=experiment_id,
+    )
     if not experiment:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Experiment not found"
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Experiment not found",
         )
-
-    # Check access permission
-    experiment = deps.get_experiment_access(experiment, current_user)
 
     # Check if experiment has results
     if experiment.status == ExperimentStatus.DRAFT:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot get results for experiments in DRAFT status",
+            detail="Cannot get results for experiments in draft status",
         )
 
     # Try to get from cache if enabled
@@ -1060,21 +1002,14 @@ async def get_segmented_experiment_results(
 
             return json.loads(cached_data)
 
-    # Create analysis service
-    analysis_service = AnalysisService(db)
-
     # Get segmented results
-    try:
-        if metric_id:
-            results = analysis_service.get_segmented_results(
-                experiment_id=experiment_id, segment_by=segment_by, metric_id=metric_id
-            )
-        else:
-            results = analysis_service.get_segmented_results(
-                experiment_id=experiment_id, segment_by=segment_by
-            )
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    results = ExperimentService.get_segmented_results(
+        db=db,
+        user=current_user,
+        experiment_id=experiment_id,
+        segment_by=segment_by,
+        metric_id=metric_id,
+    )
 
     # Cache results if enabled
     if cache_control.enabled and cache_control.redis:
@@ -1122,36 +1057,23 @@ async def update_experiment_metadata(
         HTTPException 403: If the user doesn't have permission to update this experiment
         HTTPException 404: If the experiment doesn't exist
     """
-    # Get experiment
-    experiment = db.query(Experiment).filter(Experiment.id == experiment_id).first()
+    experiment = ExperimentService.get_experiment(
+        db=db,
+        user=current_user,
+        experiment_id=experiment_id,
+    )
     if not experiment:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Experiment not found"
         )
 
-    # Check access permission
-    experiment = deps.get_experiment_access(experiment, current_user)
-
-    # Create experiment service
-    experiment_service = ExperimentService(db)
-
     # Update experiment metadata
-    try:
-        # Check if experiment already has metadata
-        current_metadata = getattr(experiment, "metadata", {}) or {}
-
-        # Merge new metadata with existing metadata
-        updated_metadata = {**current_metadata, **metadata}
-
-        # Create update data with only metadata field
-        update_data = {"metadata": updated_metadata}
-
-        # Update experiment
-        updated_experiment = experiment_service.update_experiment(
-            experiment, update_data
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    updated_experiment = ExperimentService.update_experiment_metadata(
+        db=db,
+        user=current_user,
+        experiment=experiment,
+        metadata=metadata,
+    )
 
     # Invalidate cache if enabled
     if cache_control.enabled and cache_control.redis:

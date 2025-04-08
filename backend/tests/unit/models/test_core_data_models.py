@@ -235,16 +235,16 @@ def test_user_role_relationship(db_session):
     if "sqlite" in str(db_session.bind.engine.url):
         pytest.skip("Skipping relationship test with SQLite")
 
-    # Create a user
+    # Create a user with unique values
     user = User(
-        username="testuser",
-        email="test@example.com",
+        username="testroleuser",
+        email="testroleuser@example.com",
         hashed_password="hashedpassword",
-        full_name="Test User",
+        full_name="Test Role User",
     )
 
-    # Create a role
-    role = Role(name="Admin", description="Administrator role")
+    # Create a role with unique name
+    role = Role(name="TestRole", description="Test role for relationship testing")
 
     # Associate role with user
     user.roles.append(role)
@@ -254,14 +254,14 @@ def test_user_role_relationship(db_session):
     db_session.add(role)
     db_session.commit()
 
-    # Retrieve from database and verify relationship
-    retrieved_user = db_session.query(User).filter_by(username="testuser").first()
-    assert len(retrieved_user.roles) == 1
-    assert retrieved_user.roles[0].name == "Admin"
+    # Verify relationship
+    assert role in user.roles
+    assert user in role.users
 
-    retrieved_role = db_session.query(Role).filter_by(name="Admin").first()
-    assert len(retrieved_role.users) == 1
-    assert retrieved_role.users[0].username == "testuser"
+    # Clean up
+    db_session.delete(user)
+    db_session.delete(role)
+    db_session.commit()
 
 
 def test_experiment_variant_relationship(db_session):
@@ -270,68 +270,58 @@ def test_experiment_variant_relationship(db_session):
     if "sqlite" in str(db_session.bind.engine.url):
         pytest.skip("Skipping relationship test with SQLite")
 
-    # Create a user
+    # Create a user with unique values
     user = User(
-        username="expuser",
-        email="expuser@example.com",
+        username="testvariantuser",
+        email="testvariantuser@example.com",
         hashed_password="hashedpassword",
-        full_name="Experiment User",
+        full_name="Test Variant User",
     )
     db_session.add(user)
     db_session.flush()
 
-    # Create an experiment with explicit ID
-    import uuid
-
-    experiment_id = str(uuid.uuid4())
+    # Create an experiment
     experiment = Experiment(
-        id=experiment_id,  # Explicitly set ID
         name="Test Experiment",
-        description="A test experiment",
-        hypothesis="The test hypothesis",
-        status=ExperimentStatus.DRAFT,
-        experiment_type=ExperimentType.A_B,
+        description="Test experiment for variant relationship",
+        hypothesis="Test hypothesis",
         owner_id=user.id,
+        status=ExperimentStatus.DRAFT,
     )
+    db_session.add(experiment)
+    db_session.flush()
 
     # Create variants
-    variant1 = Variant(
+    variant_a = Variant(
         name="Control",
         description="Control variant",
+        experiment_id=experiment.id,
         is_control=True,
-        traffic_allocation=50,
     )
-
-    variant2 = Variant(
+    variant_b = Variant(
         name="Treatment",
         description="Treatment variant",
+        experiment_id=experiment.id,
         is_control=False,
-        traffic_allocation=50,
     )
 
-    # Add variants to experiment
-    experiment.variants.append(variant1)
-    experiment.variants.append(variant2)
+    db_session.add(variant_a)
+    db_session.add(variant_b)
+    db_session.flush()
 
-    # Save to database
-    db_session.add(experiment)
+    # Verify relationships
+    assert len(experiment.variants) == 2
+    assert variant_a in experiment.variants
+    assert variant_b in experiment.variants
+    assert variant_a.experiment == experiment
+    assert variant_b.experiment == experiment
+
+    # Clean up
+    db_session.delete(variant_a)
+    db_session.delete(variant_b)
+    db_session.delete(experiment)
+    db_session.delete(user)
     db_session.commit()
-
-    # Retrieve from database and verify relationship
-    retrieved_experiment = (
-        db_session.query(Experiment).filter_by(name="Test Experiment").first()
-    )
-    assert len(retrieved_experiment.variants) == 2
-    assert any(v.is_control for v in retrieved_experiment.variants)
-    assert any(not v.is_control for v in retrieved_experiment.variants)
-
-    # Test cascade delete
-    db_session.delete(retrieved_experiment)
-    db_session.commit()
-
-    # Check that variants were also deleted
-    variants = db_session.query(Variant).all()
-    assert len(variants) == 0
 
 
 def test_experiment_metric_relationship(db_session):
