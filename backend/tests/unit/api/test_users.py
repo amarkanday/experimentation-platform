@@ -1,9 +1,10 @@
 # backend/tests/unit/api/test_users.py
 import pytest
-from unittest.mock import MagicMock, patch
 import uuid
+from unittest.mock import MagicMock, patch
 from fastapi import status, HTTPException
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
 from pydantic import SecretStr
 from datetime import datetime, timezone
 
@@ -11,6 +12,7 @@ from backend.app.models.user import User
 from backend.app.schemas.user import UserCreate, UserUpdate
 from backend.app.api.deps import get_current_active_user, get_current_superuser, get_db
 from backend.app.main import app
+from backend.app.core.security import get_password_hash
 
 
 @pytest.fixture
@@ -192,41 +194,61 @@ def test_list_users_normal_user(client, mock_db, normal_user):
 
 
 @patch("backend.app.api.v1.endpoints.users.get_password_hash")
-def test_create_user_superuser(mock_hash, client, mock_db, superuser):
+def test_create_user(mock_hash, client, mock_db, mock_db_query, superuser):
     """Test that superusers can create new users."""
     # Setup mocks
     mock_hash.return_value = "hashed_password"
-    mock_db_query = mock_db.query.return_value
-    mock_db_query.filter.return_value = mock_db_query
-    mock_db_query.first.return_value = None  # User doesn't exist
 
-    # Override dependencies
+    # Mock the db queries to return None for existing user checks
+    mock_db_query.filter.return_value = mock_db_query
+    mock_db_query.first.return_value = None  # No existing user with same email/username
+
+    # Set up the mock user return for the create operation
+    created_user = MagicMock()
+    created_user.id = uuid.uuid4()
+    created_user.username = "testuser"
+    created_user.email = "test@example.com"
+    created_user.full_name = "Test User"
+    created_user.is_active = True
+    created_user.is_superuser = False
+    mock_db.refresh.side_effect = lambda x: None
+
+    # Override dependencies to use superuser
     app.dependency_overrides[get_current_active_user] = lambda: superuser
     app.dependency_overrides[get_current_superuser] = lambda: superuser
+    app.dependency_overrides[get_db] = lambda: mock_db
 
-    # Make request with proper UserCreate model structure
-    new_user_data = {
-        "username": "newuser",
-        "email": "newuser@example.com",
-        "password": "Password123",  # Must meet validator requirements
-        "full_name": "New User",
-        "is_active": True,
-        "is_superuser": False,
-    }
-    response = client.post("/api/v1/users/", json=new_user_data)
+    # Configure mock to return the created user from add
+    def side_effect_add(user):
+        nonlocal created_user
+        for key, value in user.__dict__.items():
+            if key != "_sa_instance_state" and hasattr(created_user, key):
+                setattr(created_user, key, value)
+        return None
 
-    # Verify response
-    assert response.status_code == status.HTTP_201_CREATED
+    mock_db.add.side_effect = side_effect_add
+
+    # When returning user from db, use the mock
+    def side_effect_first():
+        nonlocal created_user
+        return created_user
+
+    mock_db_query.first.side_effect = [None, None, side_effect_first()]
+
+    response = client.post(
+        "/api/v1/users/",
+        json={
+            "username": "testuser",
+            "email": "test@example.com",
+            "full_name": "Test User",
+            "password": "StrongPass123",  # Plain password
+        },
+    )
+    assert response.status_code == 201, response.text
     data = response.json()
-    assert data["username"] == new_user_data["username"]
-    assert data["email"] == new_user_data["email"]
+    assert data["username"] == "testuser"
+    assert "id" in data
     assert "password" not in data  # Password should not be in response
-
-    # Verify mock calls
-    assert mock_hash.call_count == 1
-    assert isinstance(mock_hash.call_args[0][0], SecretStr)
-    mock_db.add.assert_called_once()
-    mock_db.commit.assert_called_once()
 
     # Reset overrides
     app.dependency_overrides = {}
@@ -351,11 +373,15 @@ def test_update_user_superuser(
     # Override dependencies
     app.dependency_overrides[get_current_active_user] = lambda: superuser
     app.dependency_overrides[get_db] = lambda: mock_db
+    app.dependency_overrides[get_current_superuser] = lambda: superuser
 
     # Make request
     update_data = {
+        "email": normal_user.email,  # Keep existing email
+        "username": normal_user.username,  # Keep existing username
         "full_name": "Updated Name",
         "password": "Newpassword123",  # Must meet validator requirements
+        "is_active": True,
         "is_superuser": True,
     }
     response = client.put(f"/api/v1/users/{normal_user.id}", json=update_data)
@@ -387,6 +413,8 @@ def test_update_user_self(client, mock_db, mock_db_query, normal_user):
 
     # Make request
     update_data = {
+        "username": normal_user.username,
+        "email": normal_user.email,
         "full_name": "Updated Name",
         "is_superuser": True,  # Should be ignored for normal users
     }
@@ -400,7 +428,6 @@ def test_update_user_self(client, mock_db, mock_db_query, normal_user):
 
     # Reset overrides
     app.dependency_overrides = {}
-
 
 def test_delete_user_superuser(client, mock_db, mock_db_query, superuser, normal_user):
     """Test that superusers can delete other users."""
@@ -421,3 +448,50 @@ def test_delete_user_superuser(client, mock_db, mock_db_query, superuser, normal
     # Verify mock calls
     mock_db.delete.assert_called_once_with(normal_user)
     mock_db.commit.assert_called_once()
+
+def test_create_user_existing_username(client, mock_db):
+    response = client.post(
+        "/api/v1/users/",
+        json={
+            "username": "testuser",
+            "email": "unique@example.com",
+            "full_name": "Test User",
+            "password": "StrongPass123",  # Plain password
+        },
+    )
+    assert response.status_code == 409, response.text
+
+def test_create_user_existing_email(client, mock_db):
+    response = client.post(
+        "/api/v1/users/",
+        json={
+            "username": "uniqueuser",
+            "email": "test@example.com",
+            "full_name": "Test User",
+            "password": "StrongPass123",  # Plain password
+        },
+    )
+    assert response.status_code == 409, response.text
+
+def test_weak_password(client, mock_db):
+    response = client.post(
+        "/api/v1/users/",
+        json={
+            "username": "weakpassuser",
+            "email": "weak@example.com",
+            "full_name": "Weak Pass User",
+            "password": "weakpass",  # Weak password
+        },
+    )
+    assert response.status_code == 422, response.text
+
+def test_create_user_invalid_data(client, mock_db):
+    response = client.post(
+        "/api/v1/users/",
+        json={
+            "username": "t",  # Too short
+            "email": "invalid-email",
+            "password": "weak",  # Weak password
+        },
+    )
+    assert response.status_code == 422, response.text

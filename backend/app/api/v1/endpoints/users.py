@@ -92,14 +92,14 @@ async def create_user(
     user = db.query(User).filter(User.email == user_in.email).first()
     if user:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=status.HTTP_409_CONFLICT,
             detail="Email already registered",
         )
 
     user = db.query(User).filter(User.username == user_in.username).first()
     if user:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=status.HTTP_409_CONFLICT,
             detail="Username already registered",
         )
 
@@ -292,7 +292,7 @@ async def update_user(
         )
 
     # Convert input model to dict, excluding unset fields
-    update_data = user_in.dict(exclude_unset=True)
+    update_data = user_in.model_dump(exclude_unset=True)
 
     # Regular users cannot change is_superuser or is_active
     if not current_user.is_superuser:

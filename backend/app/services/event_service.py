@@ -12,8 +12,9 @@ from sqlalchemy.orm import Session, joinedload
 from backend.app.models.event import Event, EventType
 from backend.app.models.experiment import Experiment, Variant
 from backend.app.models.assignment import Assignment
-from backend.app.schemas.tracking import EventCreate
+from backend.app.schemas.tracking import EventCreate, EventResponse
 from backend.app.core.config import settings
+from backend.app.core.logging import logger
 
 logger = logging.getLogger(__name__)
 
@@ -33,44 +34,23 @@ class EventService:
         """Initialize with a database session."""
         self.db = db
 
-    def track_event(self, event_data: EventCreate) -> Dict[str, Any]:
-        """
-        Track a new event from a user interaction.
+    def track_event(self, event_data: EventCreate) -> Event:
+        """Track a new event."""
+        try:
+            # Convert Pydantic model to dict and create DB model
+            event_dict = event_data.model_dump()
+            event = Event(**event_dict)
 
-        Args:
-            event_data: Event data schema with event details
+            # Add and commit to DB
+            self.db.add(event)
+            self.db.commit()
+            self.db.refresh(event)
 
-        Returns:
-            Dictionary containing the created event data
-        """
-        # Convert schema to dict
-        event_dict = event_data.dict()
-
-        # Add timestamp if not provided
-        if "timestamp" not in event_dict or not event_dict["timestamp"]:
-            event_dict["timestamp"] = datetime.now(timezone.utc).isoformat()
-
-        # Create event object
-        event = Event(**event_dict)
-        self.db.add(event)
-        self.db.commit()
-        self.db.refresh(event)
-
-        logger.debug(
-            f"Tracked event {event.id} of type {event.event_type} for user {event.user_id}"
-        )
-
-        # Return as dict for API response
-        return {
-            "id": str(event.id),
-            "user_id": event.user_id,
-            "event_type": event.event_type,
-            "event_name": event.event_name,
-            "experiment_id": str(event.experiment_id) if event.experiment_id else None,
-            "variant_id": str(event.variant_id) if event.variant_id else None,
-            "timestamp": event.timestamp,
-            "properties": event.properties,
-        }
+            return event
+        except Exception as e:
+            logger.error(f"Error tracking event: {str(e)}")
+            self.db.rollback()
+            raise
 
     def track_conversion(
         self,
@@ -312,44 +292,29 @@ class EventService:
             for event in events
         ]
 
-    def batch_track_events(self, events: List[EventCreate]) -> int:
-        """
-        Track multiple events in a batch operation.
-
-        Args:
-            events: List of event data schemas
-
-        Returns:
-            Number of events successfully tracked
-        """
-        if not events:
-            return 0
-
-        # Process each event
-        count = 0
-        for event_data in events:
-            try:
-                # Convert schema to dict
-                event_dict = event_data.dict()
-
-                # Add timestamp if not provided
-                if "timestamp" not in event_dict or not event_dict["timestamp"]:
-                    event_dict["timestamp"] = datetime.now(timezone.utc).isoformat()
-
-                # Create event object
+    def track_events_batch(self, events_data: List[EventCreate]) -> List[Event]:
+        """Track multiple events in a batch."""
+        try:
+            events = []
+            for event_data in events_data:
+                # Convert Pydantic model to dict and create DB model
+                event_dict = event_data.model_dump()
                 event = Event(**event_dict)
-                self.db.add(event)
-                count += 1
-            except Exception as e:
-                logger.error(f"Error tracking event in batch: {str(e)}")
-                # Continue processing other events
-                continue
+                events.append(event)
 
-        # Commit all events in a single transaction
-        self.db.commit()
+            # Add all events and commit
+            self.db.add_all(events)
+            self.db.commit()
 
-        logger.info(f"Batch tracked {count} events")
-        return count
+            # Refresh all events
+            for event in events:
+                self.db.refresh(event)
+
+            return events
+        except Exception as e:
+            logger.error(f"Error tracking events batch: {str(e)}")
+            self.db.rollback()
+            raise
 
     def delete_events_by_experiment(self, experiment_id: Union[str, UUID]) -> int:
         """

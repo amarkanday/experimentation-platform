@@ -1,99 +1,75 @@
 # backend/app/schemas/feature_flag.py
 """
-Feature flag schemas.
-
-This module contains Pydantic models for feature flag data validation.
+Feature flag schema models for validation and serialization.
 """
-import re
-from typing import Dict, List, Optional, Any, Union
-from pydantic import BaseModel, Field, validator, root_validator
-from enum import Enum
 
-
-class FeatureFlagStatus(str, Enum):
-    """Feature flag status enum."""
-
-    ACTIVE = "ACTIVE"
-    INACTIVE = "INACTIVE"
-    ARCHIVED = "ARCHIVED"
+from datetime import datetime
+from typing import Optional, Dict, Any, List
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 
 
 class FeatureFlagBase(BaseModel):
-    """Base feature flag schema."""
+    """Base model for feature flag data."""
+    key: str = Field(..., min_length=1, max_length=100)
+    name: str = Field(..., min_length=1, max_length=100)
+    description: Optional[str] = None
+    is_active: bool = True
+    rollout_percentage: Optional[int] = Field(None, ge=0, le=100)
+    targeting_rules: Optional[Dict[str, Any]] = None
+    default_value: Any = False
+    tags: Optional[List[str]] = None
 
-    key: str = Field(..., description="Unique key for the feature flag")
-    name: str = Field(..., description="Display name for the feature flag")
-    description: Optional[str] = Field(
-        None, description="Description of the feature flag"
-    )
-    status: Optional[FeatureFlagStatus] = Field(
-        FeatureFlagStatus.INACTIVE, description="Status of the feature flag"
-    )
-    rollout_percentage: int = Field(
-        0, description="Percentage of users to enable the flag for", ge=0, le=100
-    )
-    targeting_rules: Optional[Dict[str, Any]] = Field(
-        None, description="Rules for targeting users"
-    )
-    value: Optional[Dict[str, Any]] = Field(
-        None, description="Default value configuration for the feature flag"
-    )
+    model_config = ConfigDict(from_attributes=True)
 
-    @validator("key")
-    def validate_key(cls, v):
+    @field_validator("key")
+    @classmethod
+    def validate_key(cls, v: str) -> str:
         """Validate feature flag key format."""
-        if not v.islower():
+        if v != v.lower():
             raise ValueError("Key must be lowercase")
-        if not re.match(r"^[a-z0-9_\-]+$", v):
-            raise ValueError(
-                "Key must be lowercase alphanumeric characters, hyphens, or underscores"
-            )
+        if not v.replace("-", "").replace("_", "").isalnum():
+            raise ValueError("Key must be lowercase alphanumeric characters, hyphens, or underscores")
         return v
-
-    class Config:
-        """Pydantic model configuration."""
-
-        schema_extra = {
-            "example": {
-                "key": "new-checkout-flow",
-                "name": "New Checkout Flow",
-                "description": "Enables the new checkout experience for users",
-                "status": "inactive",
-                "rollout_percentage": 10,
-                "targeting_rules": {"country": ["US", "CA"], "user_group": "beta"},
-                "value": {
-                    "variants": {
-                        "control": {"value": False},
-                        "treatment": {"value": True},
-                    },
-                    "default": "control",
-                },
-            }
-        }
 
 
 class FeatureFlagCreate(FeatureFlagBase):
-    """Feature flag creation schema."""
-
+    """Model for creating a new feature flag."""
     pass
 
 
 class FeatureFlagUpdate(FeatureFlagBase):
-    """Feature flag update schema."""
-
+    """Model for updating a feature flag."""
     key: Optional[str] = None
     name: Optional[str] = None
+    is_active: Optional[bool] = None
+    default_value: Optional[Any] = None
 
 
-class FeatureFlagInDB(FeatureFlagBase):
-    """Feature flag database schema."""
-
+class FeatureFlagInDBBase(FeatureFlagBase):
+    """Base model for feature flags in DB."""
     id: str
-    owner_id: str
-    created_at: str
-    updated_at: str
+    created_at: datetime
+    updated_at: datetime
 
-    class Config:
-        """Pydantic model configuration."""
+    model_config = ConfigDict(from_attributes=True)
 
-        orm_mode = True
+
+class FeatureFlag(FeatureFlagInDBBase):
+    """Feature flag model for responses."""
+    pass
+
+
+class FeatureFlagInDB(FeatureFlagInDBBase):
+    """Feature flag model with additional DB fields."""
+    pass
+
+
+class FeatureFlagEvaluation(BaseModel):
+    """Model for feature flag evaluation results."""
+    key: str
+    value: Any
+    reason: str
+    rule_id: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+    model_config = ConfigDict(from_attributes=True)

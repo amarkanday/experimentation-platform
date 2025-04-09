@@ -8,7 +8,7 @@ from sqlalchemy import func, and_, or_
 from sqlalchemy.orm import Session, joinedload
 from fastapi.encoders import jsonable_encoder
 
-from backend.app.models.experiment import Experiment, Variant, Metric, ExperimentStatus
+from backend.app.models.experiment import Experiment, Variant, Metric, ExperimentStatus, ExperimentType, MetricType
 from backend.app.models.user import User
 from backend.app.schemas.experiment import ExperimentCreate, ExperimentUpdate
 
@@ -46,7 +46,7 @@ class ExperimentService:
         """
         experiment = (
             self.db.query(Experiment)
-            .options(joinedload(Experiment.variants), joinedload(Experiment.metrics))
+            .options(joinedload(Experiment.variants), joinedload(Experiment.metric_definitions))
             .filter(Experiment.id == experiment_id)
             .first()
         )
@@ -57,7 +57,13 @@ class ExperimentService:
         return self._experiment_to_dict(experiment)
 
     def get_experiments(
-        self, skip: int = 0, limit: int = 100, status: Optional[str] = None
+        self,
+        skip: int = 0,
+        limit: int = 100,
+        status: Optional[str] = None,
+        search: Optional[str] = None,
+        sort_by: Optional[str] = "created_at",
+        sort_order: Optional[str] = "desc"
     ) -> List[Dict[str, Any]]:
         """
         Get all experiments with optional status filter.
@@ -66,16 +72,37 @@ class ExperimentService:
             skip: Number of records to skip for pagination
             limit: Maximum number of records to return
             status: Optional status filter
+            search: Optional search term to filter experiments
+            sort_by: Field to sort by (created_at, updated_at, name, status)
+            sort_order: Sort order (asc, desc)
 
         Returns:
             List of experiment dictionaries
         """
         query = self.db.query(Experiment).options(
-            joinedload(Experiment.variants), joinedload(Experiment.metrics)
+            joinedload(Experiment.variants), joinedload(Experiment.metric_definitions)
         )
 
         if status:
             query = query.filter(Experiment.status == status)
+
+        if search:
+            search_pattern = f"%{search}%"
+            query = query.filter(
+                or_(
+                    Experiment.name.ilike(search_pattern),
+                    Experiment.description.ilike(search_pattern),
+                    Experiment.tags.contains([search]),  # For JSON array search
+                )
+            )
+
+        # Apply sorting
+        if sort_by and hasattr(Experiment, sort_by):
+            sort_field = getattr(Experiment, sort_by)
+            if sort_order and sort_order.lower() == "asc":
+                query = query.order_by(sort_field.asc())
+            else:
+                query = query.order_by(sort_field.desc())
 
         experiments = query.offset(skip).limit(limit).all()
         return [self._experiment_to_dict(exp) for exp in experiments]
@@ -86,6 +113,9 @@ class ExperimentService:
         skip: int = 0,
         limit: int = 100,
         status: Optional[str] = None,
+        search: Optional[str] = None,
+        sort_by: Optional[str] = "created_at",
+        sort_order: Optional[str] = "desc",
     ) -> List[Dict[str, Any]]:
         """
         Get experiments owned by a specific user.
@@ -95,24 +125,45 @@ class ExperimentService:
             skip: Number of records to skip for pagination
             limit: Maximum number of records to return
             status: Optional status filter
+            search: Optional search term to filter experiments
+            sort_by: Field to sort by (created_at, updated_at, name, status)
+            sort_order: Sort order (asc, desc)
 
         Returns:
             List of experiment dictionaries
         """
         query = (
             self.db.query(Experiment)
-            .options(joinedload(Experiment.variants), joinedload(Experiment.metrics))
+            .options(joinedload(Experiment.variants), joinedload(Experiment.metric_definitions))
             .filter(Experiment.owner_id == owner_id)
         )
 
         if status:
             query = query.filter(Experiment.status == status)
 
+        if search:
+            search_pattern = f"%{search}%"
+            query = query.filter(
+                or_(
+                    Experiment.name.ilike(search_pattern),
+                    Experiment.description.ilike(search_pattern),
+                    Experiment.tags.contains([search]),  # For JSON array search
+                )
+            )
+
+        # Apply sorting
+        if sort_by and hasattr(Experiment, sort_by):
+            sort_field = getattr(Experiment, sort_by)
+            if sort_order and sort_order.lower() == "asc":
+                query = query.order_by(sort_field.asc())
+            else:
+                query = query.order_by(sort_field.desc())
+
         experiments = query.offset(skip).limit(limit).all()
         return [self._experiment_to_dict(exp) for exp in experiments]
 
     def count_experiments_by_owner(
-        self, owner_id: Union[str, UUID], status: Optional[str] = None
+        self, owner_id: Union[str, UUID], status: Optional[str] = None, search: Optional[str] = None
     ) -> int:
         """
         Count experiments owned by a specific user.
@@ -120,6 +171,7 @@ class ExperimentService:
         Args:
             owner_id: User ID of the experiment owner
             status: Optional status filter
+            search: Optional search term to filter experiments
 
         Returns:
             Count of experiments matching the criteria
@@ -131,10 +183,22 @@ class ExperimentService:
         if status:
             query = query.filter(Experiment.status == status)
 
+        if search:
+            search_pattern = f"%{search}%"
+            query = query.filter(
+                or_(
+                    Experiment.name.ilike(search_pattern),
+                    Experiment.description.ilike(search_pattern),
+                    Experiment.tags.contains([search]),  # For JSON array search
+                )
+            )
+
         return query.scalar()
 
     def create_experiment(
-        self, obj_in: ExperimentCreate, user_id: Union[str, UUID]
+        self,
+        obj_in: Union[ExperimentCreate, Dict[str, Any]],
+        user_id: UUID,
     ) -> Dict[str, Any]:
         """
         Create a new experiment with variants and metrics.
@@ -154,7 +218,28 @@ class ExperimentService:
         metrics_data = obj_data.pop("metrics", [])
 
         # Set default values and owner
-        obj_data["status"] = ExperimentStatus.DRAFT.value
+        # Handle string status values by converting to enum
+        if "status" in obj_data and isinstance(obj_data["status"], str):
+            try:
+                # Convert string status (e.g., "draft") to enum (e.g., ExperimentStatus.DRAFT)
+                obj_data["status"] = ExperimentStatus[obj_data["status"].upper()]
+            except (KeyError, ValueError):
+                # Fallback to default if conversion fails
+                obj_data["status"] = ExperimentStatus.DRAFT
+        else:
+            obj_data["status"] = ExperimentStatus.DRAFT
+
+        # Handle string experiment type values by converting to enum
+        if "experiment_type" in obj_data and isinstance(obj_data["experiment_type"], str):
+            try:
+                # Convert string type (e.g., "a_b") to enum (e.g., ExperimentType.A_B)
+                obj_data["experiment_type"] = ExperimentType[obj_data["experiment_type"].upper()]
+            except (KeyError, ValueError):
+                # Fallback to default if conversion fails
+                obj_data["experiment_type"] = ExperimentType.A_B
+        else:
+            obj_data["experiment_type"] = ExperimentType.A_B
+
         obj_data["owner_id"] = str(user_id)
 
         # Create experiment
@@ -169,6 +254,18 @@ class ExperimentService:
 
         # Create metrics
         for metric_data in metrics_data:
+            # Handle string metric type values by converting to enum
+            if "metric_type" in metric_data and isinstance(metric_data["metric_type"], str):
+                try:
+                    # Convert string type (e.g., "conversion") to enum (e.g., MetricType.CONVERSION)
+                    # Note: We use lowercase since that's how the enum is defined
+                    metric_data["metric_type"] = MetricType[metric_data["metric_type"].lower()]
+                except (KeyError, ValueError):
+                    # Fallback to default if conversion fails
+                    metric_data["metric_type"] = MetricType.CONVERSION
+            else:
+                metric_data["metric_type"] = MetricType.CONVERSION
+
             metric = Metric(**metric_data, experiment_id=experiment.id)
             self.db.add(metric)
 
@@ -199,6 +296,24 @@ class ExperimentService:
         else:
             update_data = experiment_in.dict(exclude_unset=True)
 
+        # Handle string status values by converting to enum
+        if "status" in update_data and isinstance(update_data["status"], str):
+            try:
+                # Convert string status (e.g., "draft") to enum (e.g., ExperimentStatus.DRAFT)
+                update_data["status"] = ExperimentStatus[update_data["status"].upper()]
+            except (KeyError, ValueError):
+                # If conversion fails, keep the existing status
+                del update_data["status"]
+
+        # Handle string experiment type values by converting to enum
+        if "experiment_type" in update_data and isinstance(update_data["experiment_type"], str):
+            try:
+                # Convert string type (e.g., "a_b") to enum (e.g., ExperimentType.A_B)
+                update_data["experiment_type"] = ExperimentType[update_data["experiment_type"].upper()]
+            except (KeyError, ValueError):
+                # If conversion fails, keep the existing type
+                del update_data["experiment_type"]
+
         # Extract nested objects if present
         variants_data = update_data.pop("variants", None)
         metrics_data = update_data.pop("metrics", None)
@@ -227,6 +342,18 @@ class ExperimentService:
 
             # Create new metrics
             for metric_data in metrics_data:
+                # Handle string metric type values by converting to enum
+                if "metric_type" in metric_data and isinstance(metric_data["metric_type"], str):
+                    try:
+                        # Convert string type (e.g., "conversion") to enum (e.g., MetricType.CONVERSION)
+                        # Note: We use lowercase since that's how the enum is defined
+                        metric_data["metric_type"] = MetricType[metric_data["metric_type"].lower()]
+                    except (KeyError, ValueError):
+                        # Fallback to default if conversion fails
+                        metric_data["metric_type"] = MetricType.CONVERSION
+                else:
+                    metric_data["metric_type"] = MetricType.CONVERSION
+
                 metric = Metric(**metric_data, experiment_id=experiment.id)
                 self.db.add(metric)
 
@@ -473,7 +600,7 @@ class ExperimentService:
         """
         # Basic search query
         query = self.db.query(Experiment).options(
-            joinedload(Experiment.variants), joinedload(Experiment.metrics)
+            joinedload(Experiment.variants), joinedload(Experiment.metric_definitions)
         )
 
         # Add search conditions
@@ -643,16 +770,24 @@ class ExperimentService:
                 }
                 for v in experiment.variants
             ]
+        else:
+            result["variants"] = []
 
         # Add metrics if loaded
-        if hasattr(experiment, "metrics") and experiment.metrics is not None:
+        if hasattr(experiment, "metric_definitions") and experiment.metric_definitions is not None:
             result["metrics"] = [
                 {
                     "id": str(m.id),
                     "name": m.name,
                     "description": m.description,
                     "event_name": m.event_name,
-                    "event_type": m.event_type,
+                    "metric_type": m.metric_type.value if hasattr(m.metric_type, "value") else m.metric_type,
+                    "is_primary": m.is_primary,
+                    "aggregation_method": m.aggregation_method,
+                    "minimum_sample_size": m.minimum_sample_size,
+                    "expected_effect": m.expected_effect,
+                    "event_value_path": m.event_value_path,
+                    "lower_is_better": m.lower_is_better,
                     "experiment_id": str(m.experiment_id),
                     "created_at": (
                         m.created_at.isoformat()
@@ -665,7 +800,39 @@ class ExperimentService:
                         else m.updated_at
                     ),
                 }
-                for m in experiment.metrics
+                for m in experiment.metric_definitions
             ]
+        else:
+            result["metrics"] = []
 
         return result
+
+    def count_experiments(
+        self, status: Optional[str] = None, search: Optional[str] = None
+    ) -> int:
+        """
+        Count all experiments with optional filters.
+
+        Args:
+            status: Optional status filter
+            search: Optional search term to filter experiments
+
+        Returns:
+            Count of experiments matching the criteria
+        """
+        query = self.db.query(func.count(Experiment.id))
+
+        if status:
+            query = query.filter(Experiment.status == status)
+
+        if search:
+            search_pattern = f"%{search}%"
+            query = query.filter(
+                or_(
+                    Experiment.name.ilike(search_pattern),
+                    Experiment.description.ilike(search_pattern),
+                    Experiment.tags.contains([search]),  # For JSON array search
+                )
+            )
+
+        return query.scalar()

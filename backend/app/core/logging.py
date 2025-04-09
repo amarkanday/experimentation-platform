@@ -114,6 +114,9 @@ def setup_logging(
 
     return logger
 
+# Configure root logger
+logger = setup_logging()
+
 def get_logger(name: str) -> logging.Logger:
     """
     Get a logger with the specified name.

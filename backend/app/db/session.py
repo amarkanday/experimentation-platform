@@ -32,9 +32,17 @@ if not database_uri:
 engine = create_engine(
     database_uri,
     pool_pre_ping=True,  # Test connections before using them
-    pool_size=5,  # Reasonable default for most applications
-    max_overflow=10,  # Allow up to 10 additional connections
-    pool_recycle=3600,  # Recycle connections after 1 hour
+    pool_size=20,  # Increased pool size
+    max_overflow=20,  # Increased overflow
+    pool_recycle=300,  # Recycle connections after 5 minutes
+    pool_timeout=30,  # Wait up to 30 seconds for a connection
+    connect_args={
+        "connect_timeout": 10,  # Connection timeout in seconds
+        "keepalives": 1,  # Enable keepalive
+        "keepalives_idle": 30,  # Idle time before sending keepalive
+        "keepalives_interval": 10,  # Interval between keepalives
+        "keepalives_count": 5,  # Number of keepalive attempts
+    }
 )
 
 # Session factory

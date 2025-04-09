@@ -37,19 +37,17 @@ TEST_FLAG_DATA = {
     "key": TEST_FLAG_KEY,
     "name": TEST_FLAG_NAME,
     "description": TEST_FLAG_DESCRIPTION,
-    "status": FeatureFlagStatus.INACTIVE.value,
+    "is_active": False,
     "rollout_percentage": 50,
     "targeting_rules": {
         "country": ["US", "CA"],
         "user_group": "beta"
     },
-    "value": {
-        "variants": {
-            "control": {"value": False},
-            "treatment": {"value": True}
-        },
-        "default": "control"
-    }
+    "variants": {
+        "control": {"value": False},
+        "treatment": {"value": True}
+    },
+    "default_value": "control"
 }
 
 @pytest.fixture
@@ -86,7 +84,7 @@ def test_feature_flag(db_session: Session, test_user: User) -> FeatureFlag:
         owner_id=test_user.id,
         rollout_percentage=50,
         targeting_rules=TEST_FLAG_DATA["targeting_rules"],
-        variants=TEST_FLAG_DATA["value"]["variants"]
+        variants=TEST_FLAG_DATA["variants"]
     )
     db_session.add(flag)
     db_session.commit()

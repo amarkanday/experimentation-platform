@@ -1,4 +1,4 @@
-from typing import Generator, Optional, Union, Any
+from typing import Generator, Optional, Union, Any, Dict
 import asyncio
 from fastapi import Depends, HTTPException, status, Header, Request
 from fastapi.security import OAuth2PasswordBearer, APIKeyHeader
@@ -210,29 +210,62 @@ def get_current_superuser(
     return current_user
 
 
+def get_current_superuser_or_none(
+    current_user: User = Depends(get_current_active_user),
+) -> Optional[User]:
+    """
+    Get current superuser or None.
+
+    Args:
+        current_user: Current authenticated user
+
+    Returns:
+        User: Current user if they are a superuser, None otherwise
+    """
+    if current_user.is_superuser:
+        return current_user
+    return None
+
+
 def get_experiment_access(
-    experiment: Experiment, current_user: User = Depends(get_current_active_user)
-) -> Experiment:
+    experiment: Union[Experiment, Dict[str, Any]],
+    current_user: User = Depends(get_current_active_user)
+) -> Union[Experiment, Dict[str, Any]]:
     """
     Check if user has access to experiment.
 
     Args:
-        experiment (Experiment): Experiment to check
-        current_user (User): Current active user
+        experiment: Experiment object or dictionary
+        current_user: Current authenticated user
 
     Returns:
-        Experiment: Experiment if user has access
+        Union[Experiment, Dict[str, Any]]: The experiment if user has access
 
     Raises:
-        HTTPException: If user does not have access to experiment
+        HTTPException: If experiment is not found or user does not have access
     """
     if experiment is None:
-        raise HTTPException(status_code=404, detail="Experiment not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Experiment not found"
+        )
 
-    if current_user.is_superuser or experiment.user_id == current_user.id:
+    # Get owner_id based on input type
+    owner_id = experiment.owner_id if isinstance(experiment, Experiment) else experiment.get("owner_id")
+
+    # Superusers have full access
+    if current_user.is_superuser:
         return experiment
 
-    raise HTTPException(status_code=403, detail="Not enough permissions")
+    # Owners have full access to their own experiments
+    if owner_id == current_user.id:
+        return experiment
+
+    # For non-superusers and non-owners, deny access
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Not enough permissions"
+    )
 
 
 def get_api_key(

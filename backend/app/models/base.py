@@ -3,7 +3,7 @@ from datetime import datetime
 import uuid
 from sqlalchemy import Column, DateTime, String, MetaData
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import declarative_base
 from sqlalchemy.ext.declarative import declared_attr
 from sqlalchemy.orm import configure_mappers
 from backend.app.core.database_config import get_schema_name
@@ -14,11 +14,17 @@ metadata = MetaData()
 # Create base with metadata
 Base = declarative_base(metadata=metadata)
 
-# Set schema dynamically
+# Set schema immediately
+metadata.schema = get_schema_name()
+for table in metadata.tables.values():
+    table.schema = get_schema_name()
+
+# Keep the set_schema function for explicit calls
 def set_schema():
     """Set the schema for all tables."""
     schema = get_schema_name()
     metadata.schema = schema
+    # Explicitly set schema for all tables
     for table in metadata.tables.values():
         table.schema = schema
 

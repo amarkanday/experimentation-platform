@@ -264,21 +264,27 @@ async def track_events_batch(
     request: EventBatchRequest = Body(
         ...,
         description="Batch of events to track",
-        example={
-            "events": [
-                {
-                    "event_type": "page_view",
-                    "user_id": "user-123",
-                    "experiment_key": "homepage-redesign",
-                    "metadata": {"page": "/products", "referrer": "google"},
-                },
-                {
-                    "event_type": "click",
-                    "user_id": "user-123",
-                    "experiment_key": "homepage-redesign",
-                    "metadata": {"element": "buy-button"},
-                },
-            ]
+        examples={
+            "default": {
+                "summary": "Batch tracking example",
+                "description": "A sample batch of events to track for an experiment",
+                "value": {
+                    "events": [
+                        {
+                            "event_type": "page_view",
+                            "user_id": "user-123",
+                            "experiment_key": "homepage-redesign",
+                            "metadata": {"page": "/products", "referrer": "google"},
+                        },
+                        {
+                            "event_type": "click",
+                            "user_id": "user-123",
+                            "experiment_key": "homepage-redesign",
+                            "metadata": {"element": "buy-button"},
+                        },
+                    ]
+                }
+            }
         },
     ),
     db: Session = Depends(deps.get_db),

@@ -29,17 +29,99 @@ class MockUser:
 class MockExperiment:
     # Add class attributes that would be accessed in deps.py
     id = None
-    user_id = None
+    owner_id = None
+    name = None
+    description = None
+    hypothesis = None
+    status = None
+    experiment_type = None
+    targeting_rules = None
+    tags = None
+    variants = None
+    metrics = None
+    created_at = None
+    updated_at = None
+
+    # Add a mock __table__ for compatibility with SQLAlchemy models
+    class MockTable:
+        class MockColumns:
+            def __iter__(self):
+                # Return empty list of columns - getattr will still work on the MockExperiment
+                return iter([])
+
+        columns = MockColumns()
+
+    __table__ = MockTable()
 
     def __init__(self, **kwargs):
         for key, value in kwargs.items():
             setattr(self, key, value)
+
+        # Set up default values for unset attributes
+        if self.variants is None:
+            self.variants = []
+        if self.metrics is None:
+            self.metrics = []
+        if self.tags is None:
+            self.tags = []
+        if self.targeting_rules is None:
+            self.targeting_rules = {}
 
     def __eq__(self, other):
         # Simple equality check for our mock objects
         if not isinstance(other, MockExperiment):
             return False
         return self.__dict__ == other.__dict__
+
+    def get(self, key, default=None):
+        """Add dictionary-style access for compatibility with deps.get_experiment_access"""
+        return getattr(self, key, default)
+
+    @property
+    def metric_definitions(self):
+        """
+        Property to make the metrics attribute accessible as metric_definitions.
+        This helps maintain compatibility with the actual experiment model.
+        """
+        return self.metrics
+
+    def model_dump(self):
+        """Convert to dict for Pydantic."""
+        from datetime import datetime
+
+        result = {key: value for key, value in self.__dict__.items()
+                 if not key.startswith('_') and key != '__table__'}
+
+        # Convert UUID fields to strings
+        if 'id' in result and result['id'] is not None:
+            result['id'] = str(result['id'])
+        if 'owner_id' in result and result['owner_id'] is not None:
+            result['owner_id'] = str(result['owner_id'])
+
+        # Handle status
+        if 'status' in result and result['status'] is not None:
+            if hasattr(result['status'], 'value'):
+                result['status'] = result['status'].value
+
+        # Convert datetime fields
+        if 'created_at' in result and isinstance(result['created_at'], datetime):
+            result['created_at'] = result['created_at'].isoformat()
+        if 'updated_at' in result and isinstance(result['updated_at'], datetime):
+            result['updated_at'] = result['updated_at'].isoformat()
+
+        # Handle variants and metrics
+        if 'variants' in result and result['variants'] is not None:
+            result['variants'] = [
+                v.model_dump() if hasattr(v, 'model_dump') else v
+                for v in result['variants']
+            ]
+        if 'metrics' in result and result['metrics'] is not None:
+            result['metrics'] = [
+                m.model_dump() if hasattr(m, 'model_dump') else m
+                for m in result['metrics']
+            ]
+
+        return result
 
 
 class MockAPIKey:
@@ -178,7 +260,7 @@ class TestExperimentAccessDependency:
     def test_get_experiment_access_owner(self):
         """Test get_experiment_access with experiment owner."""
         # Mock experiment
-        mock_experiment = MockExperiment(id=1, user_id=1)
+        mock_experiment = MockExperiment(id=1, owner_id=1)
 
         # Mock user
         mock_user = MockUser(id=1, is_superuser=False)
@@ -192,7 +274,7 @@ class TestExperimentAccessDependency:
     def test_get_experiment_access_superuser(self):
         """Test get_experiment_access with superuser."""
         # Mock experiment
-        mock_experiment = MockExperiment(id=1, user_id=2)
+        mock_experiment = MockExperiment(id=1, owner_id=2)
 
         # Mock superuser
         mock_superuser = MockUser(id=1, is_superuser=True)
@@ -216,7 +298,7 @@ class TestExperimentAccessDependency:
     def test_get_experiment_access_unauthorized(self):
         """Test get_experiment_access with unauthorized user."""
         # Mock experiment
-        mock_experiment = MockExperiment(id=1, user_id=1)
+        mock_experiment = MockExperiment(id=1, owner_id=1)
 
         # Mock different user
         mock_user = MockUser(id=2, is_superuser=False)
@@ -490,7 +572,7 @@ class TestIntegrationDependencyInjection:
             )
 
             # Mock experiment
-            mock_experiment = MockExperiment(id=1, user_id=1)
+            mock_experiment = MockExperiment(id=1, owner_id=1)
 
             # Define dependency chain
             # 1. Get current user
@@ -542,7 +624,7 @@ class TestIntegrationDependencyInjection:
             )
 
             # Mock experiment
-            mock_experiment = MockExperiment(id=1, user_id=1)
+            mock_experiment = MockExperiment(id=1, owner_id=1)
 
             # Mock db session
             mock_db = MagicMock()

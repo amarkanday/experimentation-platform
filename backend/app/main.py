@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description=settings.PROJECT_DESCRIPTION,
-    version=settings.PROJECT_VERSION,
+    version=settings.VERSION,
     docs_url=None,
     redoc_url=None,
     openapi_url=f"{settings.API_V1_STR}/openapi.json",
@@ -37,7 +37,7 @@ app = FastAPI(
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[str(origin) for origin in settings.CORS_ORIGINS],
+    allow_origins=[str(origin) for origin in settings.BACKEND_CORS_ORIGINS],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -63,7 +63,7 @@ app.include_router(api_router, prefix=settings.API_V1_STR)
 async def get_openapi_schema():
     return get_openapi(
         title=settings.PROJECT_NAME,
-        version=settings.PROJECT_VERSION,
+        version=settings.VERSION,
         description=settings.PROJECT_DESCRIPTION,
         routes=app.routes,
     )

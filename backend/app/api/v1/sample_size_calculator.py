@@ -7,7 +7,7 @@ and desired statistical power.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Body, status
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 from typing import Dict, Any, Optional
 import math
 
@@ -39,24 +39,24 @@ class SampleSizeRequest(BaseModel):
         False, description="Whether the test is one-sided (default: two-sided)"
     )
 
-    @validator("baseline_rate")
+    @field_validator("baseline_rate")
+    @classmethod
     def validate_baseline_rate(cls, v):
         """Validate baseline conversion rate."""
         if v <= 0 or v >= 1:
             raise ValueError("Baseline rate must be between 0 and 1")
         return v
 
-    @validator("minimum_detectable_effect")
+    @field_validator("minimum_detectable_effect")
+    @classmethod
     def validate_minimum_detectable_effect(cls, v):
         """Validate minimum detectable effect."""
         if v <= 0:
             raise ValueError("Minimum detectable effect must be greater than 0")
         return v
 
-    class Config:
-        """Pydantic model configuration."""
-
-        schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "baseline_rate": 0.1,
                 "minimum_detectable_effect": 0.15,
@@ -65,6 +65,7 @@ class SampleSizeRequest(BaseModel):
                 "is_one_sided": False,
             }
         }
+    )
 
 
 class SampleSizeResponse(BaseModel):

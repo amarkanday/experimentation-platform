@@ -59,7 +59,7 @@ class TestAWSClient:
         assert result is False
         assert aws_client.metrics_client is None
 
-    @patch('app.utils.aws_client.AWSClient.init_cloudwatch_metrics')
+    @patch('backend.app.utils.aws_client.AWSClient.init_cloudwatch_metrics')
     def test_send_metric_success(self, mock_init_metrics, aws_client):
         # Test successful metric sending
         mock_metrics_client = Mock()
@@ -88,7 +88,7 @@ class TestAWSClient:
 
         assert result is False
 
-    @patch('app.utils.aws_client.AWSClient.init_cloudwatch_metrics')
+    @patch('backend.app.utils.aws_client.AWSClient.init_cloudwatch_metrics')
     def test_send_metric_error(self, mock_init_metrics, aws_client):
         # Test metric sending with error
         mock_metrics_client = Mock()

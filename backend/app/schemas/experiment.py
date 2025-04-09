@@ -11,8 +11,9 @@ from enum import Enum
 from pydantic import (
     BaseModel,
     Field,
-    validator,
-    root_validator,
+    field_validator,
+    model_validator,
+    ConfigDict,
     UUID4,
 )
 
@@ -70,8 +71,8 @@ class MetricBase(BaseModel):
     )
     lower_is_better: bool = Field(False, description="Whether lower values are better")
 
-    class Config:
-        schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "name": "Purchase Conversion",
                 "description": "Percentage of users who complete a purchase",
@@ -85,6 +86,7 @@ class MetricBase(BaseModel):
                 "lower_is_better": False,
             }
         }
+    )
 
 
 class VariantBase(BaseModel):
@@ -103,8 +105,8 @@ class VariantBase(BaseModel):
         None, description="Variant-specific configuration"
     )
 
-    class Config:
-        schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "name": "Treatment A",
                 "description": "New button design",
@@ -113,9 +115,11 @@ class VariantBase(BaseModel):
                 "configuration": {"button_color": "blue", "button_text": "Buy Now"},
             }
         }
+    )
 
-    @validator("traffic_allocation")
-    def validate_traffic_allocation(cls, v):
+    @field_validator("traffic_allocation")
+    @classmethod
+    def validate_traffic_allocation(cls, v: int) -> int:
         """Validate traffic allocation percentage."""
         if v < 0 or v > 100:
             raise ValueError("Traffic allocation must be between 0 and 100")
@@ -144,12 +148,12 @@ class ExperimentCreate(ExperimentBase):
         ExperimentStatus.DRAFT, description="Initial experiment status"
     )
     variants: List[VariantBase] = Field(
-        ..., min_items=1, description="Experiment variants"
+        ..., min_length=1, description="Experiment variants"
     )
-    metrics: List[MetricBase] = Field(..., min_items=1, description="Metrics to track")
+    metrics: List[MetricBase] = Field(..., min_length=1, description="Metrics to track")
 
-    class Config:
-        schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "name": "Button Color Test",
                 "description": "Testing different button colors on the checkout page",
@@ -196,21 +200,22 @@ class ExperimentCreate(ExperimentBase):
                 ],
             }
         }
+    )
 
-    @validator("variants")
-    def validate_variants(cls, v):
+    @model_validator(mode="after")
+    def validate_variants(self):
         """Validate that there is at least one control variant."""
-        if not any(variant.is_control for variant in v):
+        if not any(variant.is_control for variant in self.variants):
             raise ValueError("At least one variant must be marked as control")
 
         # Check that traffic allocations sum to 100
-        total_allocation = sum(variant.traffic_allocation for variant in v)
+        total_allocation = sum(variant.traffic_allocation for variant in self.variants)
         if total_allocation != 100:
             raise ValueError(
                 f"Traffic allocations must sum to 100% (currently {total_allocation}%)"
             )
 
-        return v
+        return self
 
 
 class ExperimentUpdate(BaseModel):
@@ -234,8 +239,8 @@ class ExperimentUpdate(BaseModel):
     )
     metrics: Optional[List[MetricBase]] = Field(None, description="Metrics to track")
 
-    class Config:
-        schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "name": "Updated Button Color Test",
                 "description": "Testing different button colors with updated hypothesis",
@@ -244,22 +249,23 @@ class ExperimentUpdate(BaseModel):
                 "tags": ["checkout", "ui", "conversion", "updated"],
             }
         }
+    )
 
-    @validator("variants")
-    def validate_variants(cls, v):
+    @model_validator(mode="after")
+    def validate_variants(self):
         """Validate variants if provided."""
-        if v is not None:
-            if not any(variant.is_control for variant in v):
+        if self.variants is not None:
+            if not any(variant.is_control for variant in self.variants):
                 raise ValueError("At least one variant must be marked as control")
 
             # Check that traffic allocations sum to 100
-            total_allocation = sum(variant.traffic_allocation for variant in v)
+            total_allocation = sum(variant.traffic_allocation for variant in self.variants)
             if total_allocation != 100:
                 raise ValueError(
                     f"Traffic allocations must sum to 100% (currently {total_allocation}%)"
                 )
 
-        return v
+        return self
 
 
 class VariantResponse(BaseModel):
@@ -275,8 +281,7 @@ class VariantResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class MetricResponse(BaseModel):
@@ -297,8 +302,7 @@ class MetricResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ExperimentResponse(BaseModel):
@@ -320,8 +324,7 @@ class ExperimentResponse(BaseModel):
     variants: List[VariantResponse]
     metrics: List[MetricResponse]
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ExperimentListResponse(BaseModel):
@@ -331,6 +334,26 @@ class ExperimentListResponse(BaseModel):
     total: int
     skip: int
     limit: int
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "items": [
+                    {
+                        "id": "123e4567-e89b-12d3-a456-426614174000",
+                        "name": "Button Color Test",
+                        "description": "Testing different button colors",
+                        "status": "active",
+                        "total_users": 1000,
+                        "created_at": "2023-01-01T00:00:00Z"
+                    }
+                ],
+                "total": 1,
+                "skip": 0,
+                "limit": 100
+            }
+        }
+    )
 
 
 class ExperimentResultMetric(BaseModel):
@@ -344,13 +367,15 @@ class ExperimentResultMetric(BaseModel):
     significant: Dict[str, bool]  # Is the difference statistically significant
     confidence_intervals: Dict[str, List[float]]  # 95% confidence intervals
 
+    model_config = ConfigDict(from_attributes=True)
+
 
 class ExperimentResults(BaseModel):
     """Model for experiment results."""
 
     experiment_id: UUID4
     experiment_name: str
-    status: ExperimentStatus
+    status: str
     start_date: Optional[datetime]
     end_date: Optional[datetime]
     metrics: List[ExperimentResultMetric]
@@ -358,8 +383,8 @@ class ExperimentResults(BaseModel):
     conclusion: Optional[str] = None
     recommended_variant: Optional[str] = None
 
-    class Config:
-        schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "experiment_id": "123e4567-e89b-12d3-a456-426614174000",
                 "experiment_name": "Button Color Test",
@@ -374,11 +399,12 @@ class ExperimentResults(BaseModel):
                         "differences": {"Treatment": 0.02},
                         "p_values": {"Treatment": 0.03},
                         "significant": {"Treatment": True},
-                        "confidence_intervals": {"Treatment": [0.01, 0.03]},
+                        "confidence_intervals": {"Treatment": [0.01, 0.03]}
                     }
                 ],
                 "sample_sizes": {"Control": 5000, "Treatment": 5000},
                 "conclusion": "The blue button significantly improved conversion rates by 20%",
-                "recommended_variant": "Treatment",
+                "recommended_variant": "Treatment"
             }
         }
+    )

@@ -7,5 +7,3 @@ from pathlib import Path
 from backend.app.core.config import settings
 
 database_url = os.getenv("DATABASE_URI", str(settings.DATABASE_URI))
-
-print(f"\n Alembic using DB URI: {database_url}\n")

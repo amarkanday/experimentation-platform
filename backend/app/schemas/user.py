@@ -16,135 +16,100 @@ from pydantic import (
     UUID4,
     EmailStr,
     SecretStr,
+    field_validator,
+    ConfigDict,
 )
 
 
 class UserBase(BaseModel):
-    """Base model for user data."""
+    """Base user model."""
+    username: str = Field(..., min_length=3, max_length=50)
+    email: EmailStr
+    full_name: Optional[str] = None
+    is_active: bool = True
+    is_superuser: bool = False
 
-    username: str = Field(
-        ..., min_length=3, max_length=50, description="User's username"
-    )
-    email: EmailStr = Field(..., description="User's email address")
-    full_name: Optional[str] = Field(
-        None, max_length=100, description="User's full name"
-    )
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UserCreate(UserBase):
-    """Model for creating a new user."""
+    """User creation model."""
+    password: SecretStr = Field(..., min_length=8)
 
-    password: SecretStr = Field(..., min_length=8, description="User's password")
-    is_active: bool = Field(True, description="Whether the user is active")
-    is_superuser: bool = Field(False, description="Whether the user is a superuser")
-
-    class Config:
-        schema_extra = {
-            "example": {
-                "username": "johndoe",
-                "email": "john.doe@example.com",
-                "full_name": "John Doe",
-                "password": "Password123",
-                "is_active": True,
-                "is_superuser": False,
-            }
-        }
-
-    @validator("password")
-    def password_strength(cls, v: SecretStr):
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, v: SecretStr) -> SecretStr:
         """Validate password strength."""
         password = v.get_secret_value()
-        if len(password) < 8:
-            raise ValueError("Password must be at least 8 characters long")
-
-        # Check for at least one uppercase, one lowercase, and one digit
         if not any(c.isupper() for c in password):
             raise ValueError("Password must contain at least one uppercase letter")
         if not any(c.islower() for c in password):
             raise ValueError("Password must contain at least one lowercase letter")
         if not any(c.isdigit() for c in password):
             raise ValueError("Password must contain at least one digit")
-
         return v
 
 
-class UserUpdate(BaseModel):
-    """Model for updating a user."""
+class UserUpdate(UserBase):
+    """User update model."""
+    password: Optional[SecretStr] = None
 
-    email: Optional[EmailStr] = Field(None, description="User's email address")
-    full_name: Optional[str] = Field(
-        None, max_length=100, description="User's full name"
-    )
-    password: Optional[SecretStr] = Field(None, min_length=8, description="User's password")
-    is_active: Optional[bool] = Field(None, description="Whether the user is active")
-    is_superuser: Optional[bool] = Field(
-        None, description="Whether the user is a superuser"
-    )
-    preferences: Optional[Dict[str, Any]] = Field(None, description="User preferences")
+    model_config = ConfigDict(from_attributes=True)
 
-    class Config:
-        schema_extra = {
-            "example": {
-                "email": "john.updated@example.com",
-                "full_name": "John Updated Doe",
-                "password": "NewPassword123",
-                "is_active": True,
-                "preferences": {
-                    "theme": "dark",
-                    "notifications": {"email": True, "push": False},
-                },
-            }
-        }
 
-    @validator("password")
-    def password_strength(cls, v: Optional[SecretStr]):
-        """Validate password strength if provided."""
-        if v is not None:
-            password = v.get_secret_value()
-            if len(password) < 8:
-                raise ValueError("Password must be at least 8 characters long")
+class UserInDBBase(UserBase):
+    """Base model for users in DB."""
+    id: str
 
-            # Check for at least one uppercase, one lowercase, and one digit
-            if not any(c.isupper() for c in password):
-                raise ValueError("Password must contain at least one uppercase letter")
-            if not any(c.islower() for c in password):
-                raise ValueError("Password must contain at least one lowercase letter")
-            if not any(c.isdigit() for c in password):
-                raise ValueError("Password must contain at least one digit")
+    model_config = ConfigDict(from_attributes=True)
 
-        return v
+
+class User(UserInDBBase):
+    """User model for responses."""
+    pass
+
+
+class UserInDB(UserInDBBase):
+    """User model with hashed password."""
+    hashed_password: str
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PasswordChange(BaseModel):
-    """Model for changing a user's password."""
+    """Password change model."""
+    current_password: SecretStr
+    new_password: SecretStr = Field(..., min_length=8)
 
-    current_password: SecretStr = Field(..., description="Current password")
-    new_password: SecretStr = Field(..., min_length=8, description="New password")
-
-    class Config:
-        schema_extra = {
-            "example": {
-                "current_password": "CurrentPassword123",
-                "new_password": "NewPassword456",
-            }
-        }
-
-    @validator("new_password")
-    def password_strength(cls, v: SecretStr):
+    @field_validator("new_password")
+    @classmethod
+    def validate_new_password(cls, v: SecretStr) -> SecretStr:
         """Validate new password strength."""
         password = v.get_secret_value()
-        if len(password) < 8:
-            raise ValueError("Password must be at least 8 characters long")
-
-        # Check for at least one uppercase, one lowercase, and one digit
         if not any(c.isupper() for c in password):
             raise ValueError("Password must contain at least one uppercase letter")
         if not any(c.islower() for c in password):
             raise ValueError("Password must contain at least one lowercase letter")
         if not any(c.isdigit() for c in password):
             raise ValueError("Password must contain at least one digit")
-
         return v
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class Token(BaseModel):
+    """Token model."""
+    access_token: str
+    token_type: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class TokenPayload(BaseModel):
+    """Token payload model."""
+    sub: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UserResponse(BaseModel):
@@ -162,10 +127,11 @@ class UserResponse(BaseModel):
     last_login: Optional[datetime] = None
     preferences: Optional[Dict[str, Any]] = None
 
-    class Config:
-        orm_mode = True
-        arbitrary_types_allowed = True
-        extra = "ignore"  # Ignore extra fields to prevent validation errors
+    model_config = ConfigDict(
+        from_attributes=True,
+        arbitrary_types_allowed=True,
+        extra="ignore"  # Ignore extra fields to prevent validation errors
+    )
 
 
 class UserListResponse(BaseModel):
@@ -176,8 +142,8 @@ class UserListResponse(BaseModel):
     skip: int = 0
     limit: int = 100
 
-    class Config:
-        schema_extra = {
+    model_config = ConfigDict(
+        schema_extra={
             "example": {
                 "items": [
                     {
@@ -196,33 +162,4 @@ class UserListResponse(BaseModel):
                 "limit": 100,
             }
         }
-
-
-class Token(BaseModel):
-    """Model for authentication token."""
-
-    access_token: str
-    refresh_token: str
-    token_type: str = "bearer"
-    expires_in: int
-    id_token: Optional[str] = None
-
-    class Config:
-        schema_extra = {
-            "example": {
-                "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-                "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-                "token_type": "bearer",
-                "expires_in": 3600,
-                "id_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-            }
-        }
-
-
-class TokenPayload(BaseModel):
-    """Model for token payload."""
-
-    sub: str  # Subject (user ID)
-    exp: int  # Expiration time
-    iat: Optional[int] = None  # Issued at
-    jti: Optional[str] = None  # JWT ID
+    )

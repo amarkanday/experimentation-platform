@@ -181,7 +181,6 @@ class AnalyticsStack(Stack):
             code=lambda_.Code.from_inline(
                 """
                 def handler(event, context):
-                    print("Received event:", event)
                     return {
                         'statusCode': 200,
                         'body': 'Event processed'

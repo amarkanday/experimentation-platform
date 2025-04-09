@@ -87,80 +87,75 @@ class FeatureFlagService:
 
         return query.scalar() or 0
 
-    def create_feature_flag(
-        self, obj_in: FeatureFlagCreate, owner_id: Union[str, UUID]
-    ) -> Dict[str, Any]:
-        """
-        Create a new feature flag.
+    def create_feature_flag(self, flag_data: FeatureFlagCreate) -> FeatureFlag:
+        """Create a new feature flag."""
+        try:
+            # Convert Pydantic model to dict and create DB model
+            flag_dict = flag_data.model_dump()
 
-        Args:
-            obj_in: Feature flag creation data
-            owner_id: ID of the user creating the flag
+            # Handle is_active to status conversion
+            if "is_active" in flag_dict:
+                is_active = flag_dict.pop("is_active")
+                flag_dict["status"] = FeatureFlagStatus.ACTIVE if is_active else FeatureFlagStatus.INACTIVE
 
-        Returns:
-            Dictionary containing the created feature flag data
+            # Remove any other fields that don't exist in the model
+            for key in list(flag_dict.keys()):
+                if key not in [c.name for c in FeatureFlag.__table__.columns]:
+                    flag_dict.pop(key)
 
-        Raises:
-            ValueError: If a feature flag with the same key already exists
-        """
-        # Check if feature flag with this key already exists
-        existing_flag = self.db.query(FeatureFlag).filter(FeatureFlag.key == obj_in.key).first()
-        if existing_flag:
-            raise ValueError(f"Feature flag with key '{obj_in.key}' already exists")
+            flag = FeatureFlag(**flag_dict)
 
-        # obj_data = obj_in.dict()
-        obj_data = obj_in.dict(exclude={"value"})  # Exclude 'value' field
+            # Add and commit to DB
+            self.db.add(flag)
+            self.db.commit()
+            self.db.refresh(flag)
 
-        # Set default values
-        obj_data["owner_id"] = str(owner_id)
-        if "status" not in obj_data or not obj_data["status"]:
-            obj_data["status"] = FeatureFlagStatus.INACTIVE.value
-
-        # Optional: Handle 'value' field separately if needed
-        if hasattr(obj_in, "value") and obj_in.value:
-            # Map 'value' to some other field like 'variants' if needed
-            obj_data["variants"] = obj_in.value
-
-        # Create feature flag
-        flag = FeatureFlag(**obj_data)
-        self.db.add(flag)
-        self.db.commit()
-        self.db.refresh(flag)
-
-        logger.info(f"Created feature flag {flag.id}: {flag.name}")
-        return self._feature_flag_to_dict(flag)
+            return flag
+        except Exception as e:
+            logger.error(f"Error creating feature flag: {str(e)}")
+            self.db.rollback()
+            raise
 
     def update_feature_flag(
-        self, flag: FeatureFlag, obj_in: Union[FeatureFlagUpdate, Dict[str, Any]]
-    ) -> Dict[str, Any]:
-        """
-        Update an existing feature flag.
+        self, flag_id: Union[str, UUID, FeatureFlag], flag_data: FeatureFlagUpdate
+    ) -> Optional[Dict[str, Any]]:
+        """Update an existing feature flag."""
+        try:
+            # Handle if a FeatureFlag object was passed instead of an ID
+            if isinstance(flag_id, FeatureFlag):
+                flag = flag_id
+            else:
+                # Get existing flag
+                flag = self.db.query(FeatureFlag).filter(FeatureFlag.id == flag_id).first()
 
-        Args:
-            flag: Feature flag model object
-            obj_in: Update data
+            if not flag:
+                return None
 
-        Returns:
-            Dictionary containing the updated feature flag data
-        """
-        # Convert to dict if it's a schema
-        update_data = (
-            obj_in if isinstance(obj_in, dict) else obj_in.dict(exclude_unset=True)
-        )
+            # Update flag with new data
+            update_data = flag_data.model_dump(exclude_unset=True)
 
-        # Update attributes
-        for field in update_data:
-            if hasattr(flag, field):
-                setattr(flag, field, update_data[field])
+            # Handle is_active to status conversion
+            if "is_active" in update_data:
+                is_active = update_data.pop("is_active")
+                update_data["status"] = FeatureFlagStatus.ACTIVE if is_active else FeatureFlagStatus.INACTIVE
 
-        # Update timestamp
-        flag.updated_at = datetime.now(timezone.utc)
+            # Remove fields that don't exist in the model
+            for key in list(update_data.keys()):
+                if key not in [c.name for c in FeatureFlag.__table__.columns]:
+                    update_data.pop(key)
 
-        self.db.commit()
-        self.db.refresh(flag)
+            for field, value in update_data.items():
+                setattr(flag, field, value)
 
-        logger.info(f"Updated feature flag {flag.id}: {flag.name}")
-        return self._feature_flag_to_dict(flag)
+            # Commit changes
+            self.db.commit()
+            self.db.refresh(flag)
+
+            return self._feature_flag_to_dict(flag)
+        except Exception as e:
+            logger.error(f"Error updating feature flag: {str(e)}")
+            self.db.rollback()
+            raise
 
     def delete_feature_flag(self, flag: FeatureFlag) -> None:
         """

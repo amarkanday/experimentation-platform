@@ -48,7 +48,7 @@ api_router_v1.include_router(sample_size_router, prefix="/utils", tags=["Utiliti
 
 # Main API router that includes versioned routers
 api_router = APIRouter()
-api_router.include_router(api_router_v1, prefix="/v1")
+api_router.include_router(api_router_v1)
 
 # Documentation configuration
 tags_metadata = [

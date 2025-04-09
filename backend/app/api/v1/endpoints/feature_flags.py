@@ -196,9 +196,35 @@ async def create_feature_flag(
 
     # Create feature flag
     try:
+        # Create feature flag with updated owner_id
+        # Set owner_id on the feature flag data
+        feature_flag_in_dict = feature_flag_in.model_dump()
+        feature_flag_in_dict["owner_id"] = current_user.id
+
+        # Convert back to pydantic model
+        updated_feature_flag_in = FeatureFlagCreate(**feature_flag_in_dict)
+
+        # Create the feature flag using the service
         feature_flag = feature_flag_service.create_feature_flag(
-            obj_in=feature_flag_in, owner_id=current_user.id
+            flag_data=updated_feature_flag_in
         )
+
+        # Convert SQLAlchemy model to dictionary manually
+        response_dict = {
+            "id": str(feature_flag.id),
+            "key": feature_flag.key,
+            "name": feature_flag.name,
+            "description": feature_flag.description,
+            "status": feature_flag.status,
+            "owner_id": str(feature_flag.owner_id) if feature_flag.owner_id else None,
+            "targeting_rules": feature_flag.targeting_rules,
+            "rollout_percentage": feature_flag.rollout_percentage,
+            "variants": feature_flag.variants,
+            "tags": feature_flag.tags,
+            "created_at": feature_flag.created_at.isoformat() if feature_flag.created_at else None,
+            "updated_at": feature_flag.updated_at.isoformat() if feature_flag.updated_at else None
+        }
+
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -208,7 +234,7 @@ async def create_feature_flag(
         for key in cache_control.redis.scan_iter(match=pattern):
             cache_control.redis.delete(key)
 
-    return feature_flag
+    return response_dict
 
 
 @router.get(
