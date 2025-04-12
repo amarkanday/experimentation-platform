@@ -12,11 +12,19 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declared_attr
+import enum
 
 from .base import Base, BaseModel
 from backend.app.core.database_config import get_schema_name
 import typing
 
+# Define UserRole enum for direct role assignment
+class UserRole(str, enum.Enum):
+    """User roles in the system."""
+    ADMIN = "admin"
+    ANALYST = "analyst"
+    DEVELOPER = "developer"
+    VIEWER = "viewer"
 
 # Many-to-many relationship table for users and roles
 def _get_users_table_name():
@@ -82,6 +90,7 @@ class User(Base, BaseModel):
     is_superuser = Column(Boolean, default=False, nullable=False)
     last_login = Column(DateTime)
     preferences = Column(JSONB, default={})
+    role = Column(Enum(UserRole), nullable=False, default=UserRole.VIEWER)
 
     # Relationships with explicit back_populates
     feature_flags = relationship(

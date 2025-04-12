@@ -7,6 +7,7 @@ from .user import (
     Permission,
     user_role_association,
     role_permission_association,
+    UserRole,
 )
 from .experiment import (
     Experiment,
@@ -44,6 +45,7 @@ __all__ = [
     "MetricType",
     "FeatureFlagStatus",
     "EventType",
+    "UserRole",
 ]
 
 # Remove or comment out any premature configuration

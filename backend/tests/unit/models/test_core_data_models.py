@@ -13,7 +13,7 @@ from alembic import command
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
+# Import all necessary models
 from backend.app.models.base import Base, BaseModel
 from backend.app.models import (
     User,
@@ -31,6 +31,7 @@ from backend.app.models import (
     ExperimentType,
     FeatureFlagStatus,
     user_role_association,
+    UserRole,
 )
 from backend.app.core.database_config import get_schema_name
 
@@ -181,7 +182,7 @@ def test_user_model_structure():
     inspector = inspect(User)
     columns = [column.name for column in inspector.columns]
 
-    required_columns = ["username", "email", "hashed_password", "is_active"]
+    required_columns = ["username", "email", "hashed_password", "is_active", "role"]
 
     for column in required_columns:
         assert column in columns, f"User model is missing required column {column}"
@@ -190,6 +191,12 @@ def test_user_model_structure():
     for column_name in ["username", "email"]:
         column = User.__table__.columns.get(column_name)
         assert column.unique, f"Column {column_name} should have a unique constraint"
+
+    # Check role enum type
+    role_column = User.__table__.columns.get("role")
+    assert role_column is not None, "Role column not found"
+    assert role_column.type.name == "userrole", "Role column should be an enum type"
+    assert role_column.default.arg == "viewer", "Role should default to 'viewer'"
 
 
 @pytest.mark.skip(reason="Works fine in its ./models/ directory")
@@ -225,6 +232,56 @@ def test_role_has_users_relationship():
     """Test that Role model has a 'users' relationship."""
     role_attrs = dir(Role)
     assert "users" in role_attrs, "Role model is missing 'users' relationship"
+
+
+def test_user_role_enum_field(db_session):
+    """Test that the User role enum field works correctly."""
+    # Skip test if using SQLite (due to JSON column issues)
+    if "sqlite" in str(db_session.bind.engine.url):
+        pytest.skip("Skipping role enum test with SQLite")
+
+    # Create users with different roles
+    admin_user = User(
+        username="admin_user",
+        email="admin@example.com",
+        hashed_password="hashedpassword",
+        full_name="Admin User",
+        is_active=True,
+        role=UserRole.ADMIN
+    )
+
+    analyst_user = User(
+        username="analyst_user",
+        email="analyst@example.com",
+        hashed_password="hashedpassword",
+        full_name="Analyst User",
+        is_active=True,
+        role=UserRole.ANALYST
+    )
+
+    # Save to database
+    db_session.add(admin_user)
+    db_session.add(analyst_user)
+    db_session.commit()
+
+    # Retrieve from database and verify roles
+    retrieved_admin = db_session.query(User).filter_by(username="admin_user").first()
+    assert retrieved_admin.role == UserRole.ADMIN
+
+    retrieved_analyst = db_session.query(User).filter_by(username="analyst_user").first()
+    assert retrieved_analyst.role == UserRole.ANALYST
+
+    # Test default role
+    default_user = User(
+        username="default_user",
+        email="default@example.com",
+        hashed_password="hashedpassword"
+    )
+    db_session.add(default_user)
+    db_session.commit()
+
+    retrieved_default = db_session.query(User).filter_by(username="default_user").first()
+    assert retrieved_default.role == UserRole.VIEWER
 
 
 # ============== Model Relationship Tests ==============
