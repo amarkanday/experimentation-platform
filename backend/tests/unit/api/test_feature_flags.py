@@ -50,6 +50,16 @@ TEST_FLAG_DATA = {
     "default_value": "control"
 }
 
+
+@pytest.fixture(autouse=True)
+def clear_schema_cache_fixture():
+    """Clear schema cache before each test."""
+    from backend.app.core.database_config import clear_schema_cache
+    clear_schema_cache()
+    yield
+
+
+
 @pytest.fixture
 def test_user(db_session: Session) -> User:
     """Create a test user."""

@@ -9,6 +9,12 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Add this to backend/app/core/database_config.py
+def clear_schema_cache():
+    """Clear the cached schema name."""
+    get_schema_name.cache_clear()
+
+
 @lru_cache(maxsize=1)
 def get_schema_name() -> str:
     """Get the schema name based on the environment."""
