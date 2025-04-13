@@ -97,6 +97,9 @@ class Experiment(Base, BaseModel):
     events = relationship(
         "Event", back_populates="experiment", cascade="all, delete-orphan"
     )
+    reports = relationship(
+        "Report", back_populates="experiment", cascade="all, delete"
+    )
 
     # Add assignments relationship
     assignments = relationship(

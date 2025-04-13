@@ -1,14 +1,21 @@
 from typing import Generator, Optional, Union, Any, Dict
 import asyncio
 from fastapi import Depends, HTTPException, status, Header, Request
-from fastapi.security import OAuth2PasswordBearer, APIKeyHeader
+from fastapi.security import OAuth2PasswordBearer, APIKeyHeader, HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
+from jose import jwt
 
 from backend.app.core.config import settings
+from backend.app.core.pagination import Paginator
+from backend.app.core.security import oauth2_scheme
+from backend.app.core.permissions import ResourceType, Action, check_permission, check_ownership, get_permission_error_message
+from backend.app.core.cognito import map_cognito_groups_to_role, should_be_superuser
 from backend.app.db.session import SessionLocal
-from backend.app.models.user import User
+from backend.app.models.user import User, UserRole
 from backend.app.models.experiment import Experiment
+from backend.app.models.feature_flag import FeatureFlag
+from backend.app.models.report import Report
 from backend.app.services.auth_service import auth_service
 from loguru import logger
 from backend.app.models.api_key import APIKey
@@ -128,6 +135,7 @@ def get_current_user(
 ) -> User:
     """
     Get the current authenticated user from the provided JWT token.
+    Syncs user role with Cognito groups on each authentication.
 
     Args:
         token (str): JWT access token
@@ -140,12 +148,26 @@ def get_current_user(
         HTTPException: If authentication fails
     """
     try:
-        # Get user details from Cognito
-        user_data = auth_service.get_user(token)
+        # Get user details and groups from Cognito
+        user_data = auth_service.get_user_with_groups(token)
 
         # Get user from database
         username = user_data.get("username")
         user = db.query(User).filter(User.username == username).first()
+
+        # Extract groups and map to role
+        cognito_groups = user_data.get("groups", [])
+
+        # Map Cognito groups to role
+        role = map_cognito_groups_to_role(cognito_groups)
+
+        # Determine superuser status from Cognito admin groups
+        is_superuser = should_be_superuser(cognito_groups)
+
+        # If superuser, ensure they have ADMIN role for full permissions
+        if is_superuser and role != UserRole.ADMIN:
+            role = UserRole.ADMIN
+            logger.info(f"User {username} is a superuser, assigning ADMIN role")
 
         if not user:
             # Create user in database if not exists
@@ -156,11 +178,36 @@ def get_current_user(
             ).strip()
 
             user = User(
-                username=username, email=email, full_name=full_name, is_active=True
+                username=username,
+                email=email,
+                full_name=full_name,
+                is_active=True,
+                role=role,
+                is_superuser=is_superuser
             )
             db.add(user)
             db.commit()
             db.refresh(user)
+
+            logger.info(f"Created new user {username} with role {role} and superuser={is_superuser}")
+        elif settings.SYNC_ROLES_ON_LOGIN:
+            # Update user's role and superuser status if changed
+            role_changed = user.role != role
+            superuser_changed = user.is_superuser != is_superuser
+
+            if role_changed or superuser_changed:
+                # Update user properties
+                if role_changed:
+                    user.role = role
+                    logger.info(f"User {username} role updated to {role} based on Cognito groups")
+
+                if superuser_changed:
+                    user.is_superuser = is_superuser
+                    logger.info(f"User {username} superuser status updated to {is_superuser}")
+
+                # Commit changes to database
+                db.commit()
+                db.refresh(user)
 
         return user
     except Exception as e:
@@ -232,40 +279,41 @@ def get_experiment_access(
     current_user: User = Depends(get_current_active_user)
 ) -> Union[Experiment, Dict[str, Any]]:
     """
-    Check if user has access to experiment.
+    Check if user has access to the experiment.
+
+    This function ensures the current user has permission to access
+    the specified experiment, checking superuser status, permissions,
+    and ownership as needed.
 
     Args:
-        experiment: Experiment object or dictionary
-        current_user: Current authenticated user
+        experiment: The experiment to check access for
+        current_user: The current authenticated user
 
     Returns:
-        Union[Experiment, Dict[str, Any]]: The experiment if user has access
+        The experiment if access is allowed
 
     Raises:
-        HTTPException: If experiment is not found or user does not have access
+        HTTPException: If the user does not have permission to access the experiment
     """
-    if experiment is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Experiment not found"
-        )
-
-    # Get owner_id based on input type
-    owner_id = experiment.owner_id if isinstance(experiment, Experiment) else experiment.get("owner_id")
-
-    # Superusers have full access
+    # Superusers always have access
     if current_user.is_superuser:
         return experiment
 
-    # Owners have full access to their own experiments
-    if owner_id == current_user.id:
-        return experiment
+    # Check if user has permission to read experiments
+    if not check_permission(current_user, ResourceType.EXPERIMENT, Action.READ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=get_permission_error_message(ResourceType.EXPERIMENT, Action.READ),
+        )
 
-    # For non-superusers and non-owners, deny access
-    raise HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail="Not enough permissions"
-    )
+    # Check ownership for non-admin users for modification actions
+    if not check_permission(current_user, ResourceType.EXPERIMENT, Action.UPDATE) and not check_ownership(current_user, experiment):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have permission to access this experiment",
+        )
+
+    return experiment
 
 
 def get_api_key(
@@ -376,3 +424,223 @@ async def get_cache_control(skip_cache: bool = False) -> CacheControl:
         logger.warning(f"Redis connection failed: {e}")
 
     return cache_control
+
+
+# Feature Flag permissions
+async def get_feature_flag_by_key(
+    key: str,
+    db: Session = Depends(get_db),
+) -> FeatureFlag:
+    """Get a feature flag by key."""
+    feature_flag = db.query(FeatureFlag).filter(FeatureFlag.key == key).first()
+    if not feature_flag:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Feature flag with key {key} not found",
+        )
+    return feature_flag
+
+
+async def get_feature_flag_access(
+    feature_flag: FeatureFlag = Depends(get_feature_flag_by_key),
+    current_user: User = Depends(get_current_user),
+) -> FeatureFlag:
+    """Check if user has access to the feature flag."""
+    if current_user.is_superuser:
+        return feature_flag
+
+    # Check if user has permission to read feature flags
+    if not check_permission(current_user, ResourceType.FEATURE_FLAG, Action.READ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=get_permission_error_message(ResourceType.FEATURE_FLAG, Action.READ),
+        )
+
+    # Check ownership for non-admin users for modification actions
+    if not check_permission(current_user, ResourceType.FEATURE_FLAG, Action.UPDATE) and not check_ownership(current_user, feature_flag):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have permission to access this feature flag",
+        )
+
+    return feature_flag
+
+
+async def can_create_feature_flag(
+    current_user: User = Depends(get_current_user),
+) -> bool:
+    """Check if user can create a feature flag."""
+    if not check_permission(current_user, ResourceType.FEATURE_FLAG, Action.CREATE):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=get_permission_error_message(ResourceType.FEATURE_FLAG, Action.CREATE),
+        )
+    return True
+
+
+async def can_update_feature_flag(
+    feature_flag: FeatureFlag = Depends(get_feature_flag_access),
+    current_user: User = Depends(get_current_user),
+) -> bool:
+    """Check if user can update a feature flag."""
+    if not check_permission(current_user, ResourceType.FEATURE_FLAG, Action.UPDATE):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=get_permission_error_message(ResourceType.FEATURE_FLAG, Action.UPDATE),
+        )
+    return True
+
+
+async def can_delete_feature_flag(
+    feature_flag: FeatureFlag = Depends(get_feature_flag_access),
+    current_user: User = Depends(get_current_user),
+) -> bool:
+    """Check if user can delete a feature flag."""
+    if not check_permission(current_user, ResourceType.FEATURE_FLAG, Action.DELETE):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=get_permission_error_message(ResourceType.FEATURE_FLAG, Action.DELETE),
+        )
+    return True
+
+
+# Report permissions
+async def get_report_by_id(
+    report_id: int,
+    db: Session = Depends(get_db),
+) -> Report:
+    """Get a report by ID."""
+    report = db.query(Report).filter(Report.id == report_id).first()
+    if not report:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Report with id {report_id} not found",
+        )
+    return report
+
+
+async def get_report_access(
+    report: Report = Depends(get_report_by_id),
+    current_user: User = Depends(get_current_user),
+) -> Report:
+    """Check if user has access to the report."""
+    if current_user.is_superuser:
+        return report
+
+    # Check if user has permission to read reports
+    if not check_permission(current_user, ResourceType.REPORT, Action.READ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=get_permission_error_message(ResourceType.REPORT, Action.READ),
+        )
+
+    # Check ownership for non-admin users for modification actions
+    if not check_permission(current_user, ResourceType.REPORT, Action.UPDATE) and not check_ownership(current_user, report):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have permission to access this report",
+        )
+
+    return report
+
+
+async def can_create_report(
+    current_user: User = Depends(get_current_user),
+) -> bool:
+    """Check if user can create a report."""
+    if not check_permission(current_user, ResourceType.REPORT, Action.CREATE):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=get_permission_error_message(ResourceType.REPORT, Action.CREATE),
+        )
+    return True
+
+
+async def can_update_report(
+    report: Report = Depends(get_report_access),
+    current_user: User = Depends(get_current_user),
+) -> bool:
+    """Check if user can update a report."""
+    if not check_permission(current_user, ResourceType.REPORT, Action.UPDATE):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=get_permission_error_message(ResourceType.REPORT, Action.UPDATE),
+        )
+    return True
+
+
+async def can_delete_report(
+    report: Report = Depends(get_report_access),
+    current_user: User = Depends(get_current_user),
+) -> bool:
+    """Check if user can delete a report."""
+    if not check_permission(current_user, ResourceType.REPORT, Action.DELETE):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=get_permission_error_message(ResourceType.REPORT, Action.DELETE),
+        )
+    return True
+
+
+# Update experiment permissions to use the new permission system
+def get_experiment_access(
+    experiment: Experiment = Depends(get_experiment_by_key),
+    current_user: User = Depends(get_current_user),
+) -> Experiment:
+    """Check if user has access to the experiment."""
+    if current_user.is_superuser:
+        return experiment
+
+    # Check if user has permission to read experiments
+    if not check_permission(current_user, ResourceType.EXPERIMENT, Action.READ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=get_permission_error_message(ResourceType.EXPERIMENT, Action.READ),
+        )
+
+    # Check ownership for non-admin users for modification actions
+    if not check_permission(current_user, ResourceType.EXPERIMENT, Action.UPDATE) and not check_ownership(current_user, experiment):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have permission to access this experiment",
+        )
+
+    return experiment
+
+
+def can_create_experiment(
+    current_user: User = Depends(get_current_user),
+) -> bool:
+    """Check if user can create an experiment."""
+    if not check_permission(current_user, ResourceType.EXPERIMENT, Action.CREATE):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=get_permission_error_message(ResourceType.EXPERIMENT, Action.CREATE),
+        )
+    return True
+
+
+def can_update_experiment(
+    experiment: Union[Experiment, Dict[str, Any]] = Depends(get_experiment_access),
+    current_user: User = Depends(get_current_user),
+) -> bool:
+    """Check if user can update an experiment."""
+    if not check_permission(current_user, ResourceType.EXPERIMENT, Action.UPDATE):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=get_permission_error_message(ResourceType.EXPERIMENT, Action.UPDATE),
+        )
+    return True
+
+
+def can_delete_experiment(
+    experiment: Union[Experiment, Dict[str, Any]] = Depends(get_experiment_access),
+    current_user: User = Depends(get_current_user),
+) -> bool:
+    """Check if user can delete an experiment."""
+    if not check_permission(current_user, ResourceType.EXPERIMENT, Action.DELETE):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=get_permission_error_message(ResourceType.EXPERIMENT, Action.DELETE),
+        )
+    return True

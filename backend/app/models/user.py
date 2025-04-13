@@ -102,6 +102,9 @@ class User(Base, BaseModel):
     api_keys = relationship(
         "APIKey", back_populates="user", cascade="all, delete-orphan"
     )
+    reports = relationship(
+        "Report", back_populates="owner", cascade="all, delete-orphan"
+    )
 
     @declared_attr
     def __table_args__(cls):

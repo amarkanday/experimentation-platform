@@ -4,8 +4,8 @@ Feature flag schema models for validation and serialization.
 """
 
 from datetime import datetime
-from typing import Optional, Dict, Any, List
-from pydantic import BaseModel, Field, field_validator, ConfigDict
+from typing import Optional, Dict, Any, List, Union
+from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 
 
 class FeatureFlagBase(BaseModel):
@@ -73,3 +73,46 @@ class FeatureFlagEvaluation(BaseModel):
     metadata: Optional[Dict[str, Any]] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class FeatureFlagReadExtended(FeatureFlagInDBBase):
+    """
+    Extended feature flag read model with additional information.
+    Used for detailed feature flag reads.
+    """
+    owner_id: Optional[int] = None
+    metrics: Optional[List[Dict[str, Any]]] = None
+    variants: Optional[List[Dict[str, Any]]] = None
+    last_evaluated: Optional[datetime] = None
+
+
+class FeatureFlagListResponse(BaseModel):
+    """
+    Paginated response model for feature flags.
+    """
+    items: List[FeatureFlagReadExtended]
+    total: int
+    skip: int
+    limit: int
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "items": [
+                    {
+                        "id": "123e4567-e89b-12d3-a456-426614174000",
+                        "key": "new_feature",
+                        "name": "New Feature Flag",
+                        "description": "Controls access to new feature",
+                        "is_active": True,
+                        "created_at": "2023-01-01T00:00:00Z",
+                        "updated_at": "2023-01-01T00:00:00Z"
+                    }
+                ],
+                "total": 1,
+                "skip": 0,
+                "limit": 100
+            }
+        },
+        from_attributes=True
+    )

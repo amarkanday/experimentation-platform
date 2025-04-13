@@ -8,6 +8,7 @@ manage feature flags for gradual rollouts and A/B testing.
 
 from uuid import UUID
 from typing import List, Dict, Any, Optional
+import json
 
 from fastapi import (
     APIRouter,
@@ -28,8 +29,15 @@ from backend.app.schemas.feature_flag import (
     FeatureFlagCreate,
     FeatureFlagUpdate,
     FeatureFlagInDB,
+    FeatureFlagListResponse,
+    FeatureFlagReadExtended,
 )
 from backend.app.services.feature_flag_service import FeatureFlagService
+from backend.app.core import security
+from backend.app.core.config import settings
+from backend.app.core.security import get_password_hash
+from backend.app.crud import crud_user, crud_feature_flag
+from backend.app.core.permissions import ResourceType, Action, check_permission
 
 # Create router with tag for documentation grouping
 router = APIRouter(
@@ -80,71 +88,92 @@ router = APIRouter(
 
 @router.get(
     "/",
-    response_model=List[Dict[str, Any]],
+    response_model=FeatureFlagListResponse,
     summary="List feature flags",
-    response_description="Returns a list of feature flags",
+    response_description="Returns a paginated list of feature flags",
 )
 async def list_feature_flags(
+    *,
     db: Session = Depends(deps.get_db),
-    current_user: User = Depends(deps.get_current_active_user),
-    cache_control: Dict[str, Any] = Depends(deps.get_cache_control),
-    status_filter: Optional[str] = Query(
-        None,
-        description="Filter by feature flag status (active, inactive, archived)",
-    ),
-    skip: int = Query(0, ge=0, description="Number of records to skip for pagination"),
-    limit: int = Query(
-        100, ge=1, le=500, description="Maximum number of records to return"
-    ),
-    search: Optional[str] = Query(
-        None, description="Search term to filter feature flag names and descriptions"
-    ),
-) -> List[Dict[str, Any]]:
+    skip: int = 0,
+    limit: int = 100,
+    status: Optional[str] = None,
+    search: Optional[str] = None,
+    current_user = Depends(deps.get_current_active_user),
+) -> FeatureFlagListResponse:
     """
-    List feature flags with filtering and pagination.
-
-    This endpoint retrieves a list of feature flags based on the provided filters.
-    Regular users only see their own feature flags, while superusers can see all flags.
-
-    The results are paginated and can be filtered by status and search terms.
-
-    - **status_filter**: Filter feature flags by their current status
-    - **skip/limit**: Pagination parameters
-    - **search**: Filter feature flags by name or description
-
-    Returns:
-        List[Dict[str, Any]]: List of feature flag objects
+    Retrieve feature flags.
+    - **skip**: Number of feature flags to skip in pagination
+    - **limit**: Maximum number of feature flags to return
+    - **status**: Filter by status (ACTIVE, INACTIVE)
+    - **search**: Filter by name or key
     """
-    # Create feature flag service
-    feature_flag_service = FeatureFlagService(db)
-
-    # Try to get from cache if enabled
-    if cache_control.enabled and cache_control.redis:
-        cache_key = f"feature_flags:{current_user.id}:{status_filter or 'all'}:{skip}:{limit}:{search or ''}"
-        cached_data = cache_control.redis.get(cache_key)
-        if cached_data:
-            import json
-
-            return json.loads(cached_data)
-
-    # Query feature flags based on user permissions
-    feature_flags = feature_flag_service.get_feature_flags(
-        skip=skip,
-        limit=limit,
-        status=status_filter,
-    )
-
-    # Cache result if enabled
-    if cache_control.enabled and cache_control.redis:
-        import json
-
-        cache_control.redis.setex(
-            cache_key,
-            3600,  # Cache for 1 hour
-            json.dumps(feature_flags),
+    # Check if user has permission to list feature flags
+    if not check_permission(current_user, ResourceType.FEATURE_FLAG, Action.LIST):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have permission to list feature flags",
         )
 
-    return feature_flags
+    cache_key = f"feature_flags:{current_user.id}:{skip}:{limit}:{status}:{search}"
+
+    # Check if we have cached data
+    if settings.CACHE_CONTROL.get("enabled", False):
+        redis_client = settings.CACHE_CONTROL.get("redis")
+        cached_data = redis_client.get(cache_key)
+        if cached_data:
+            cached_response = json.loads(cached_data)
+            # Convert cached data to FeatureFlagListResponse
+            return FeatureFlagListResponse(
+                items=cached_response["items"],
+                total=cached_response["total"],
+                skip=cached_response["skip"],
+                limit=cached_response["limit"]
+            )
+
+    # Get feature flags based on user role and permissions
+    if current_user.is_superuser:
+        feature_flags_data = crud_feature_flag.get_multi(
+            db, skip=skip, limit=limit, status=status, search=search
+        )
+        total = crud_feature_flag.count(db, status=status, search=search)
+    else:
+        # Check if user has permission to view all feature flags
+        # Admin/Developer roles can see all flags, Analyst/Viewer can only see their own
+        if check_permission(current_user, ResourceType.FEATURE_FLAG, Action.UPDATE):
+            # User has broader permissions (e.g., ADMIN, DEVELOPER)
+            feature_flags_data = crud_feature_flag.get_multi(
+                db, skip=skip, limit=limit, status=status, search=search
+            )
+            total = crud_feature_flag.count(db, status=status, search=search)
+        else:
+            # User can only see their own feature flags (e.g., ANALYST, VIEWER with limited permissions)
+            feature_flags_data = crud_feature_flag.get_multi_by_owner(
+                db=db, owner_id=current_user.id, skip=skip, limit=limit,
+                status=status, search=search
+            )
+            total = crud_feature_flag.count_by_owner(
+                db=db, owner_id=current_user.id, status=status, search=search
+            )
+
+    # Create response with pagination
+    response = FeatureFlagListResponse(
+        items=feature_flags_data,
+        total=total,
+        skip=skip,
+        limit=limit
+    )
+
+    # Cache the response if caching is enabled
+    if settings.CACHE_CONTROL.get("enabled", False):
+        redis_client = settings.CACHE_CONTROL.get("redis")
+        redis_client.setex(
+            cache_key,
+            settings.CACHE_CONTROL.get("ttl", 3600),  # Default to 1 hour
+            json.dumps(response.model_dump())
+        )
+
+    return response
 
 
 @router.post(
@@ -161,6 +190,7 @@ async def create_feature_flag(
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user),
     cache_control: Dict[str, Any] = Depends(deps.get_cache_control),
+    _: bool = Depends(deps.can_create_feature_flag),  # Use the permission dependency
 ) -> Dict[str, Any]:
     """
     Create a new feature flag.
@@ -229,10 +259,10 @@ async def create_feature_flag(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
     # Invalidate cache if enabled
-    if cache_control.enabled and cache_control.redis:
+    if cache_control.get("enabled") and cache_control.get("redis"):
         pattern = f"feature_flags:{current_user.id}:*"
-        for key in cache_control.redis.scan_iter(match=pattern):
-            cache_control.redis.delete(key)
+        for key in cache_control.get("redis").scan_iter(match=pattern):
+            cache_control.get("redis").delete(key)
 
     return response_dict
 

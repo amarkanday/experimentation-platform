@@ -62,6 +62,9 @@ class FeatureFlag(Base, BaseModel):
     events = relationship(
         "Event", back_populates="feature_flag", cascade="all, delete-orphan"
     )
+    reports = relationship(
+        "Report", back_populates="feature_flag", cascade="all, delete"
+    )
 
     @declared_attr
     def __table_args__(cls):

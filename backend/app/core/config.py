@@ -44,6 +44,16 @@ class Settings(BaseSettings):
     FIRST_SUPERUSER: EmailStr = "admin@example.com"
     FIRST_SUPERUSER_PASSWORD: str = "admin"
 
+    # Cognito settings
+    COGNITO_GROUP_ROLE_MAPPING: Dict[str, str] = {
+        "Admins": "admin",
+        "Developers": "developer",
+        "Analysts": "analyst",
+        "Viewers": "viewer"
+    }
+    COGNITO_ADMIN_GROUPS: List[str] = ["Admins", "SuperUsers"]
+    SYNC_ROLES_ON_LOGIN: bool = True
+
     model_config = SettingsConfigDict(
         case_sensitive=True,
         extra="allow"  # Allow extra fields
@@ -119,6 +129,7 @@ class DevSettings(Settings):
     LOG_LEVEL: str = "DEBUG"
     CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:8000"]
     CACHE_ENABLED: bool = False
+    CACHE_CONTROL: Dict[str, Any] = {"enabled": False, "redis": None, "ttl": 3600}
     PROJECT_NAME: str = "Experimentation Platform (Development)"
     PROJECT_DESCRIPTION: str = "A platform for managing experiments and feature flags (Development Environment)"
     POSTGRES_SERVER: str = "localhost"
@@ -143,6 +154,8 @@ class TestSettings(Settings):
     POSTGRES_PASSWORD: str = "postgres"
     POSTGRES_DB: str = "experimentation_test"
     POSTGRES_SCHEMA: str = "test_experimentation"
+    CACHE_ENABLED: bool = False
+    CACHE_CONTROL: Dict[str, Any] = {"enabled": False, "redis": None, "ttl": 3600}
 
     model_config = SettingsConfigDict(env_file=".env.test", case_sensitive=True, extra="allow")
 
@@ -154,6 +167,7 @@ class ProdSettings(Settings):
     PROJECT_NAME: str = "Experimentation Platform"
     PROJECT_DESCRIPTION: str = "A platform for managing experiments and feature flags"
     CACHE_ENABLED: bool = True
+    CACHE_CONTROL: Dict[str, Any] = {"enabled": True, "redis": None, "ttl": 3600}
 
     model_config = SettingsConfigDict(env_file=".env.prod", case_sensitive=True, extra="allow")
 

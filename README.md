@@ -12,7 +12,16 @@ Key capabilities:
 -   Feature flags with targeting and gradual rollouts
 -   Real-time metric tracking and statistical analysis
 -   User segmentation for targeted experiments
--   Role-based access control
+-   Role-based access control with AWS Cognito integration
+
+## Current Development Tasks
+
+The following development tasks are currently in progress:
+
+- **Cognito Integration**: User roles are automatically set based on Cognito group membership. [Documentation](docs/cognito_integration.md)
+- **Feature Flag RBAC Integration**: Integrating feature flag endpoints with the existing RBAC system. [Ticket](docs/issue_fixes/feature_flag_permission_integration.md)
+- **Permission System Enhancements**: Improving and standardizing permission checks across all endpoints.
+- **Pydantic V2 Migration**: Updating the codebase to be compatible with Pydantic V2.
 
 ## Architecture
 

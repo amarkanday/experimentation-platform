@@ -1,12 +1,12 @@
-import boto3
+import boto3  # noqa: F401
 import os
 import time
 import logging
-import pytest
-import jwt
+import pytest  # noqa: F401
+import jwt  # noqa: F401
 from typing import Dict, Any, Optional
 from unittest.mock import patch, MagicMock
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError  # noqa: F401
 
 from backend.app.services.auth_service import CognitoAuthService
 from backend.app.core.config import settings
@@ -141,6 +141,35 @@ def mock_auth_service_singleton():
             }
         }
         yield mock_service
+
+
+@pytest.fixture
+def mock_cognito_user_with_groups_response():
+    """Cognito get user with groups response fixture."""
+    return {
+        "Username": "testuser",
+        "UserAttributes": [
+            {"Name": "sub", "Value": "test-user-id"},
+            {"Name": "email", "Value": "test@example.com"},
+            {"Name": "given_name", "Value": "Test"},
+            {"Name": "family_name", "Value": "User"},
+        ],
+        "Groups": [
+            {"GroupName": "Developers", "Precedence": 10},
+            {"GroupName": "Analysts", "Precedence": 20}
+        ]
+    }
+
+
+@pytest.fixture
+def mock_cognito_groups_response():
+    """Cognito list groups for user response fixture."""
+    return {
+        "Groups": [
+            {"GroupName": "Developers", "Precedence": 10},
+            {"GroupName": "Analysts", "Precedence": 20}
+        ]
+    }
 
 
 def create_client_error(code, message, operation):
@@ -572,3 +601,50 @@ def test_auth_service_singleton_mock(mock_auth_service_singleton):
     mock_auth_service_singleton.get_user.assert_called_once_with("test-token")
     assert result["username"] == "testuser"
     assert result["attributes"]["email"] == "test@example.com"
+
+
+def test_get_user_with_groups(auth_service, mock_boto3_client, mock_cognito_user_response, mock_cognito_groups_response):
+    """Test getting user details and group membership."""
+    # Mock Cognito responses
+    mock_boto3_client.get_user.return_value = mock_cognito_user_response
+    mock_boto3_client.admin_list_groups_for_user.return_value = mock_cognito_groups_response
+
+    # Set up user pool ID
+    auth_service.user_pool_id = "test-pool-id"
+
+    # Call get_user_with_groups method
+    result = auth_service.get_user_with_groups("test-token")
+
+    # Verify Cognito client calls
+    mock_boto3_client.get_user.assert_called_once_with(AccessToken="test-token")
+    mock_boto3_client.admin_list_groups_for_user.assert_called_once_with(
+        UserPoolId="test-pool-id",
+        Username="testuser"
+    )
+
+    # Verify result
+    assert result["username"] == "testuser"
+    assert "attributes" in result
+    assert result["attributes"]["email"] == "test@example.com"
+    assert result["groups"] == ["Developers", "Analysts"]
+
+
+def test_get_user_with_groups_no_pool_id(auth_service, mock_boto3_client, mock_cognito_user_response):
+    """Test getting user details when no user pool ID is configured."""
+    # Mock Cognito response
+    mock_boto3_client.get_user.return_value = mock_cognito_user_response
+
+    # Remove user pool ID
+    auth_service.user_pool_id = None
+
+    # Call get_user_with_groups method
+    result = auth_service.get_user_with_groups("test-token")
+
+    # Verify Cognito client was called correctly
+    mock_boto3_client.get_user.assert_called_once_with(AccessToken="test-token")
+    mock_boto3_client.admin_list_groups_for_user.assert_not_called()
+
+    # Verify result
+    assert result["username"] == "testuser"
+    assert "attributes" in result
+    assert result["groups"] == []

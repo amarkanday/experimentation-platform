@@ -7,9 +7,14 @@ and other security-related operations.
 """
 
 from passlib.context import CryptContext
+from fastapi.security import OAuth2PasswordBearer
+from backend.app.core.config import settings
 
 # Create password context for hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# OAuth2 password bearer scheme for token authentication
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/auth/token")
 
 def get_password_hash(password: str) -> str:
     """

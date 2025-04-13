@@ -219,6 +219,58 @@ class CognitoAuthService:
             logger.error(f"Unexpected error getting user details: {str(e)}")
             raise ValueError("An unexpected error occurred retrieving user details")
 
+    def get_user_with_groups(self, access_token: str) -> Dict[str, Any]:
+        """
+        Get user details and group membership from access token.
+
+        Args:
+            access_token: JWT access token from Cognito
+
+        Returns:
+            Dict with user info and groups
+        """
+        try:
+            # Get basic user details
+            response = self.client.get_user(AccessToken=access_token)
+
+            # Extract user attributes
+            user_attributes = {
+                attr["Name"]: attr["Value"]
+                for attr in response.get("UserAttributes", [])
+            }
+
+            # Get username for group lookup
+            username = response.get("Username")
+
+            # Get user's Cognito groups
+            groups = []
+            if self.user_pool_id:
+                try:
+                    # Use admin_list_groups_for_user to get group membership
+                    group_response = self.client.admin_list_groups_for_user(
+                        UserPoolId=self.user_pool_id,
+                        Username=username
+                    )
+                    groups = [group.get("GroupName") for group in group_response.get("Groups", [])]
+                except Exception as e:
+                    logger.warning(f"Error getting user groups: {str(e)}")
+
+            logger.info(
+                f"User details with groups retrieved for username: {username}, groups: {groups}"
+            )
+
+            return {
+                "username": username,
+                "attributes": user_attributes,
+                "groups": groups
+            }
+        except ClientError as e:
+            logger.error(f"Get user with groups error: {str(e)}")
+            raise ValueError(str(e))
+        except Exception as e:
+            logger.error(f"Unexpected error getting user details with groups: {str(e)}")
+            raise ValueError("An unexpected error occurred retrieving user details")
+
 
 # Create a single instance of the service
 auth_service = CognitoAuthService()
