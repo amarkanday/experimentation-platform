@@ -364,30 +364,44 @@ def get_experiment_by_key(
     experiment_key: str, db: Session = Depends(get_db)
 ) -> Experiment:
     """
-    Get experiment by key.
+    Get experiment by key or ID.
 
     Args:
-        experiment_key (str): Experiment key
+        experiment_key (str): Experiment key or ID
         db (Session): Database session
 
     Returns:
-        Experiment: Experiment with the given key
+        Experiment: Experiment with the given key or ID
 
     Raises:
         HTTPException: If experiment not found or inactive
     """
-    # experiment = db.query(Experiment).filter(Experiment.key == experiment_key).first()
-    experiment = (
-        db.query(Experiment)
-        .filter(getattr(Experiment, "key", None) == experiment_key)
-        .first()
-    )
+    experiment = None
+
+    # First try to lookup by ID (UUID)
+    try:
+        from uuid import UUID
+        experiment_id = UUID(experiment_key)
+        experiment = db.query(Experiment).filter(Experiment.id == experiment_id).first()
+    except (ValueError, TypeError):
+        # Not a valid UUID, try the original lookup method
+        pass
+
+    # If not found by ID, try the original lookup method
+    if not experiment:
+        experiment = (
+            db.query(Experiment)
+            .filter(getattr(Experiment, "key", None) == experiment_key)
+            .first()
+        )
+
     if not experiment:
         raise HTTPException(status_code=404, detail="Experiment not found")
 
     cache_enabled = getattr(settings, "CACHE_ENABLED", False)
-    if not experiment.is_active:
-        raise HTTPException(status_code=400, detail="Inactive experiment")
+    if cache_enabled:
+        experiment_cache = RedisExperimentCache(settings)
+        experiment_cache.clear_experiment_cache(str(experiment.id))
 
     return experiment
 
@@ -638,9 +652,26 @@ def can_delete_experiment(
     current_user: User = Depends(get_current_user),
 ) -> bool:
     """Check if user can delete an experiment."""
+    # Check if user has permission to delete experiments
     if not check_permission(current_user, ResourceType.EXPERIMENT, Action.DELETE):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=get_permission_error_message(ResourceType.EXPERIMENT, Action.DELETE),
         )
+
+    # If not a superuser, check ownership
+    if not current_user.is_superuser:
+        # For Dict objects, check owner_id field
+        if isinstance(experiment, dict) and str(experiment.get("owner_id")) != str(current_user.id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You must be the owner to delete this experiment",
+            )
+        # For Experiment objects, check owner_id attribute
+        elif hasattr(experiment, "owner_id") and str(experiment.owner_id) != str(current_user.id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You must be the owner to delete this experiment",
+            )
+
     return True

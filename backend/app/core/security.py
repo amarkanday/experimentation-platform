@@ -41,3 +41,25 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         True if password matches hash, False otherwise
     """
     return pwd_context.verify(plain_password, hashed_password)
+
+def decode_token(token: str) -> dict:
+    """
+    Decode a JWT token and return the claims.
+    This is a placeholder implementation for testing purposes.
+    In production, this would validate the token against Cognito or another auth provider.
+
+    Args:
+        token: JWT token to decode
+
+    Returns:
+        Dict containing token claims
+    """
+    # This is a mock implementation for testing
+    # In a real implementation, you would use a JWT library to decode and verify the token
+    return {
+        "sub": "user_id",
+        "username": "username",
+        "exp": 0,
+        "iat": 0,
+        "email": "user@example.com"
+    }

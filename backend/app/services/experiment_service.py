@@ -1,6 +1,6 @@
 # backend/app/services/experiment_service.py
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Union, Tuple
 from uuid import UUID
 
@@ -476,6 +476,67 @@ class ExperimentService:
         logger.info(f"Archived experiment {experiment.id}: {experiment.name}")
         return self._experiment_to_dict(experiment)
 
+    def update_experiment_schedule(
+        self,
+        experiment: Experiment,
+        schedule: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        Update experiment scheduling configuration.
+
+        Args:
+            experiment: Experiment model to update
+            schedule: Scheduling configuration containing start_date, end_date, and time_zone
+
+        Returns:
+            Dictionary containing the updated experiment data
+
+        Raises:
+            ValueError: If scheduling parameters are invalid
+        """
+        # Validate experiment status
+        if experiment.status not in [ExperimentStatus.DRAFT, ExperimentStatus.PAUSED]:
+            raise ValueError(
+                f"Cannot schedule experiment with status {experiment.status}. "
+                f"Experiment must be in DRAFT or PAUSED status."
+            )
+
+        # Update experiment schedule
+        if "start_date" in schedule:
+            experiment.start_date = schedule["start_date"]
+
+        if "end_date" in schedule:
+            experiment.end_date = schedule["end_date"]
+
+        # Validate date relationships
+        if experiment.start_date and experiment.end_date:
+            if experiment.end_date <= experiment.start_date:
+                raise ValueError("End date must be after start date")
+
+            # Minimum duration check
+            min_duration = timedelta(hours=1)
+            if experiment.end_date - experiment.start_date < min_duration:
+                raise ValueError(f"Experiment must run for at least {min_duration}")
+
+        # Add timezone metadata if not using UTC
+        if "time_zone" in schedule and schedule["time_zone"] != "UTC":
+            if not hasattr(experiment, 'metadata') or not experiment.metadata:
+                experiment.metadata = {}
+            experiment.metadata["time_zone"] = schedule["time_zone"]
+
+        experiment.updated_at = datetime.now(timezone.utc)
+
+        # Save changes
+        self.db.commit()
+        self.db.refresh(experiment)
+
+        logger.info(
+            f"Updated schedule for experiment {experiment.id}: "
+            f"start={experiment.start_date}, end={experiment.end_date}"
+        )
+
+        return self._experiment_to_dict(experiment)
+
     def delete_experiment(self, experiment: Experiment) -> None:
         """
         Delete an experiment and all related data.
@@ -667,45 +728,71 @@ class ExperimentService:
 
     def _validate_experiment_for_start(self, experiment: Experiment) -> bool:
         """
-        Validate that an experiment meets requirements to be started.
+        Validate that an experiment meets requirements to start.
 
         Args:
-            experiment: Experiment model object to validate
+            experiment: Experiment to validate
 
         Returns:
-            True if experiment is valid to start, False otherwise
+            Boolean indicating if experiment can be started
         """
-        # Ensure experiment has variants
+        # Check if experiment has variants
         if not experiment.variants or len(experiment.variants) < 2:
             logger.warning(
-                f"Experiment {experiment.id} cannot start: needs at least 2 variants"
+                f"Experiment {experiment.id} does not have enough variants to start"
             )
             return False
 
-        # Ensure experiment has a control variant
-        has_control = any(v.is_control for v in experiment.variants)
+        # Check if experiment has at least one control variant
+        has_control = any(variant.is_control for variant in experiment.variants)
         if not has_control:
             logger.warning(
-                f"Experiment {experiment.id} cannot start: needs a control variant"
+                f"Experiment {experiment.id} does not have a control variant"
             )
             return False
 
-        # Ensure experiment has metrics
-        if not experiment.metrics or len(experiment.metrics) < 1:
+        # Check if experiment has metrics
+        if not experiment.metric_definitions or len(experiment.metric_definitions) < 1:
             logger.warning(
-                f"Experiment {experiment.id} cannot start: needs at least 1 metric"
+                f"Experiment {experiment.id} does not have any metrics defined"
             )
             return False
 
-        # Ensure total traffic allocation adds up to 100%
-        total_allocation = sum(v.traffic_allocation for v in experiment.variants)
-        if total_allocation != 100:
-            logger.warning(
-                f"Experiment {experiment.id} cannot start: traffic allocation {total_allocation}% ≠ 100%"
-            )
-            return False
-
+        # All checks passed
         return True
+
+    def _parse_datetime(self, date_str: str, time_zone: str = "UTC") -> datetime:
+        """
+        Parse datetime string with time zone awareness.
+
+        Args:
+            date_str: Date string in ISO format
+            time_zone: Time zone name (default: UTC)
+
+        Returns:
+            Timezone-aware datetime object
+
+        Raises:
+            ValueError: If the date string is invalid or time zone is unknown
+        """
+        try:
+            # Parse the date string
+            dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+
+            # Convert to UTC for storage
+            if time_zone != "UTC":
+                import pytz
+                try:
+                    tz = pytz.timezone(time_zone)
+                    dt = tz.localize(dt.replace(tzinfo=None))
+                    dt = dt.astimezone(pytz.UTC)
+                except Exception as e:
+                    logger.warning(f"Unknown time zone: {time_zone}, using UTC. Error: {str(e)}")
+
+            return dt
+        except ValueError as e:
+            logger.error(f"Error parsing date: {date_str}, {str(e)}")
+            raise ValueError(f"Invalid date format: {date_str}")
 
     def _experiment_to_dict(self, experiment: Experiment) -> Dict[str, Any]:
         """

@@ -19,6 +19,7 @@ from fastapi import (
     Body,
     status,
     Response,
+    BackgroundTasks,
 )
 from sqlalchemy.orm import Session
 from fastapi.encoders import jsonable_encoder
@@ -32,10 +33,13 @@ from backend.app.schemas.experiment import (
     ExperimentResponse,
     ExperimentListResponse,
     ExperimentResults,
+    ScheduleConfig,
 )
 from backend.app.services.experiment_service import ExperimentService
 from backend.app.services.analysis_service import AnalysisService
 from backend.app.core.logging import logger
+from backend.app.core.permissions import check_permission, ResourceType, Action, get_permission_error_message, check_ownership
+from backend.app.core.scheduler import experiment_scheduler
 
 # Create router with tag for documentation grouping
 router = APIRouter(
@@ -303,8 +307,21 @@ async def get_experiment(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Experiment not found"
             )
 
-        # Check access permission - handles both Model and Dict types
-        experiment = deps.get_experiment_access(experiment, current_user)
+        # Superusers can access all experiments
+        if current_user.is_superuser:
+            pass  # Allow access
+        # For viewers and other roles, check both permission and ownership
+        elif not check_permission(current_user, ResourceType.EXPERIMENT, Action.READ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=get_permission_error_message(ResourceType.EXPERIMENT, Action.READ),
+            )
+        # Non-superusers must be the owner (this applies to viewers)
+        elif not check_ownership(current_user, experiment):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You don't have permission to access this experiment",
+            )
 
         # Create the response - if it's a dictionary, use model_validate directly
         if isinstance(experiment, dict):
@@ -513,6 +530,7 @@ async def delete_experiment(
     experiment_id: UUID = Path(..., description="The ID of the experiment to delete"),
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user),
+    can_delete: bool = Depends(deps.can_delete_experiment),
     cache_control: Dict[str, Any] = Depends(deps.get_cache_control),
 ) -> None:
     """
@@ -542,14 +560,12 @@ async def delete_experiment(
             status_code=status.HTTP_404_NOT_FOUND, detail="Experiment not found"
         )
 
-    # Check if the user is either the owner or a superuser
-    if experiment.owner_id != current_user.id and not current_user.is_superuser:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You must be the owner or a superuser to delete this experiment",
-        )
+    # The permission checks are now handled by the deps.can_delete_experiment dependency
+    # This ensures that both checks are performed:
+    # 1. User has DELETE permission for experiments
+    # 2. User is the owner of the experiment (if not a superuser)
 
-    # Check experiment status for non-draft experiments
+    # Additional check for experiment status for non-draft experiments
     if experiment.status != ExperimentStatus.DRAFT:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -743,6 +759,109 @@ async def pause_experiment(
         return ExperimentResponse.model_validate(experiment)
     except Exception as e:
         logger.error(f"Error pausing experiment: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put(
+    "/{experiment_id}/schedule",
+    response_model=ExperimentResponse,
+    summary="Update experiment schedule",
+    response_description="Returns the experiment with updated scheduling",
+)
+async def update_experiment_schedule(
+    experiment_id: UUID = Path(..., description="The ID of the experiment to schedule"),
+    schedule: ScheduleConfig = Body(..., description="Scheduling configuration"),
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    cache_control: Dict[str, Any] = Depends(deps.get_cache_control),
+) -> ExperimentResponse:
+    """
+    Update experiment scheduling configuration.
+
+    This endpoint allows scheduling experiments for future activation and automatic completion.
+
+    - **start_date**: When the experiment should automatically activate
+    - **end_date**: When the experiment should automatically complete
+    - **time_zone**: Time zone for interpreting the dates (default: UTC)
+
+    Both dates must be in the future, and end_date must be after start_date.
+
+    Returns:
+        ExperimentResponse: The updated experiment with scheduling information
+
+    Raises:
+        HTTPException 400: If scheduling parameters are invalid
+        HTTPException 403: If user doesn't have permission to update this experiment
+        HTTPException 404: If experiment not found
+    """
+    try:
+        # Get experiment by ID
+        experiment = db.query(Experiment).filter(Experiment.id == experiment_id).first()
+        if not experiment:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Experiment not found"
+            )
+
+        # Use explicit permission checks for update operation
+        # Step 1: Check if user has UPDATE permission
+        if not check_permission(current_user, ResourceType.EXPERIMENT, Action.UPDATE):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"You don't have permission to update experiments",
+            )
+
+        # Step 2: Check ownership for non-superusers
+        if not current_user.is_superuser and experiment.owner_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"You don't have permission to update this experiment",
+            )
+
+        # Create experiment service
+        experiment_service = ExperimentService(db)
+
+        # Validate experiment status
+        if experiment.status not in [ExperimentStatus.DRAFT, ExperimentStatus.PAUSED]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Cannot schedule experiment with status {experiment.status}. "
+                f"Experiment must be in DRAFT or PAUSED status."
+            )
+
+        # Update experiment schedule
+        try:
+            # Convert ScheduleConfig to dictionary for service
+            schedule_dict = {
+                "start_date": schedule.start_date,
+                "end_date": schedule.end_date,
+                "time_zone": schedule.time_zone
+            }
+
+            # Update the experiment
+            updated_experiment = experiment_service.update_experiment_schedule(
+                experiment=experiment,
+                schedule=schedule_dict
+            )
+
+        except ValueError as e:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+        # Invalidate cache if enabled
+        if getattr(cache_control, 'enabled', False) and getattr(cache_control, 'redis', None):
+            # Delete specific experiment cache
+            experiment_cache_key = f"experiment:{experiment_id}"
+            cache_control.redis.delete(experiment_cache_key)
+
+            # Delete experiment list caches
+            pattern = f"experiments:{current_user.id}:*"
+            for key in cache_control.redis.scan_iter(match=pattern):
+                cache_control.redis.delete(key)
+
+        return ExperimentResponse.model_validate(updated_experiment)
+    except Exception as e:
+        logger.error(f"Error updating experiment schedule: {str(e)}")
+        if isinstance(e, HTTPException):
+            raise e
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -1517,3 +1636,42 @@ def stats_z_score(p: float) -> float:
         )
 
     return z
+
+
+@router.post(
+    "/schedules/process",
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Manually trigger experiment schedule processing",
+    description="Admin-only endpoint to manually process scheduled experiments",
+    response_description="Processing scheduled experiments",
+)
+async def trigger_schedule_processing(
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Dict[str, str]:
+    """
+    Manually trigger the scheduler to process experiments with scheduled dates.
+
+    This is an admin-only endpoint that runs the scheduler process to:
+    1. Activate experiments that have reached their start_date
+    2. Complete experiments that have reached their end_date
+
+    The processing happens in a background task to avoid blocking the response.
+
+    Returns:
+        A status message
+
+    Raises:
+        HTTPException 403: If user is not an admin
+    """
+    # Only allow admin users to trigger this
+    if not current_user.is_superuser:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only administrators can trigger scheduled processing"
+        )
+
+    # Process the scheduled experiments in the background
+    background_tasks.add_task(experiment_scheduler.process_scheduled_experiments)
+
+    return {"status": "Processing scheduled experiments in the background"}

@@ -5,7 +5,7 @@ This module defines Pydantic models for experiment-related data structures.
 These models are used for request/response validation and documentation.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional, Union
 from enum import Enum
 from pydantic import (
@@ -45,6 +45,55 @@ class MetricType(str, Enum):
     COUNT = "count"  # Event count
     DURATION = "duration"  # Time duration
     CUSTOM = "custom"  # Custom metric
+
+
+class ScheduleConfig(BaseModel):
+    """Configuration for experiment scheduling."""
+
+    start_date: Optional[datetime] = Field(
+        None,
+        description="Date and time when experiment should automatically start"
+    )
+    end_date: Optional[datetime] = Field(
+        None,
+        description="Date and time when experiment should automatically complete"
+    )
+    time_zone: str = Field(
+        "UTC",
+        description="Time zone for interpreting dates"
+    )
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "start_date": "2023-12-01T00:00:00Z",
+                "end_date": "2023-12-31T23:59:59Z",
+                "time_zone": "UTC"
+            }
+        }
+    )
+
+    @field_validator("start_date")
+    @classmethod
+    def validate_start_date(cls, v: Optional[datetime]) -> Optional[datetime]:
+        """Validate that start_date is in the future if provided."""
+        if v and v < datetime.now(timezone.utc) - timedelta(minutes=10):  # Allow small buffer
+            raise ValueError("Start date must be in the future")
+        return v
+
+    @model_validator(mode="after")
+    def validate_dates(self) -> "ScheduleConfig":
+        """Validate date relationships."""
+        if self.start_date and self.end_date and self.end_date <= self.start_date:
+            raise ValueError("End date must be after start date")
+
+        # Minimum duration check
+        if self.start_date and self.end_date:
+            min_duration = timedelta(hours=1)
+            if self.end_date - self.start_date < min_duration:
+                raise ValueError(f"Experiment must run for at least {min_duration}")
+
+        return self
 
 
 class MetricBase(BaseModel):
@@ -238,6 +287,9 @@ class ExperimentUpdate(BaseModel):
         None, description="Experiment variants"
     )
     metrics: Optional[List[MetricBase]] = Field(None, description="Metrics to track")
+    schedule: Optional[ScheduleConfig] = Field(
+        None, description="Scheduling configuration for automatic activation/completion"
+    )
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -317,8 +369,8 @@ class ExperimentResponse(BaseModel):
     targeting_rules: Optional[Dict[str, Any]] = None
     tags: Optional[List[str]] = None
     owner_id: UUID4
-    start_date: Optional[str] = None
-    end_date: Optional[str] = None
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
     variants: List[VariantResponse]

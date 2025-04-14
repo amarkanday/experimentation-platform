@@ -15,12 +15,13 @@ from sqlalchemy.orm import configure_mappers
 from backend.app.main import app
 from backend.app.db.session import get_db, Base, init_db
 from backend.app.api import deps
-from backend.app.models.user import User
+from backend.app.models.user import User, UserRole
 from backend.app.models.experiment import Experiment, ExperimentStatus
 from backend.app.core.database_config import get_schema_name
 from backend.app.core.config import settings, TestSettings
 from backend.app.models.base import set_schema
 from backend.app.api.deps import CacheControl
+from unittest.mock import patch, MagicMock, AsyncMock
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +42,7 @@ def setup_test_environment():
     os.environ["TESTING"] = "true"
     os.environ["POSTGRES_DB"] = "experimentation_test"
     os.environ["POSTGRES_SCHEMA"] = "test_experimentation"
-    os.environ["POSTGRES_SERVER"] = "experimentation-postgres"
+    os.environ["POSTGRES_SERVER"] = "localhost"  # Changed from experimentation-postgres to localhost
     os.environ["DATABASE_URI"] = DEFAULT_TEST_DB_URL
 
     # Initialize test settings
@@ -65,7 +66,7 @@ def setup_test_environment():
 @pytest.fixture(scope="session")
 def test_db():
     """Create test database and schema."""
-    # Update to use the Docker PostgreSQL port
+    # Update to use the local PostgreSQL port
     db_url = os.environ.get("TEST_DATABASE_URL", DEFAULT_TEST_DB_URL)
     max_retries = 3
     retry_count = 0
@@ -194,7 +195,7 @@ def db_session(test_db):
 
 
 @pytest.fixture
-def client(db_session):
+def client(db_session, monkeypatch):
     """Create a test client for the FastAPI application."""
     # Override the get_db dependency
     def override_get_db():
@@ -203,38 +204,57 @@ def client(db_session):
         finally:
             pass
 
-    def override_get_current_user():
+    # Mock Cognito auth service
+    def mock_get_user_with_groups(*args, **kwargs):
+        return {
+            "username": "test_user",
+            "attributes": {"email": "test@example.com"},
+            "groups": ["admin-group"]
+        }
+
+    monkeypatch.setattr(
+        "backend.app.services.auth_service.CognitoAuthService.get_user_with_groups",
+        mock_get_user_with_groups
+    )
+
+    # Mock security token decoder
+    def mock_decode_token(*args, **kwargs):
+        return {
+            "sub": "test_user_id",
+            "username": "test_user",
+            "email": "test@example.com"
+        }
+
+    monkeypatch.setattr(
+        "backend.app.core.security.decode_token",
+        mock_decode_token
+    )
+
+    # Create a superuser for authentication
+    user = User(
+        username="test_user",
+        email="test@example.com",
+        full_name="Test User",
+        hashed_password="$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW",
+        is_active=True,
+        is_superuser=True,
+        role=UserRole.ADMIN
+    )
+    db_session.add(user)
+    db_session.commit()
+    db_session.refresh(user)
+
+    # Create both sync and async return functions for user
+    async def override_get_current_user():
         """Override get_current_user to return a test user."""
-        user = User(
-            username="test_user",
-            email="test@example.com",
-            full_name="Test User",
-            hashed_password="test_hashed_password",
-            is_active=True,
-            is_superuser=False
-        )
-        db_session.add(user)
-        db_session.commit()
-        db_session.refresh(user)
         return user
 
     def override_get_current_active_user():
         """Override get_current_active_user to return a test user."""
-        return override_get_current_user()
+        return user
 
     def override_get_current_superuser():
         """Override get_current_superuser to return a superuser."""
-        user = User(
-            username="test_superuser",
-            email="superuser@example.com",
-            full_name="Test Superuser",
-            hashed_password="test_hashed_password",
-            is_active=True,
-            is_superuser=True
-        )
-        db_session.add(user)
-        db_session.commit()
-        db_session.refresh(user)
         return user
 
     async def override_get_cache_control():
@@ -243,7 +263,7 @@ def client(db_session):
 
     def override_get_api_key():
         """Override API key authentication to return a test user."""
-        return override_get_current_user()
+        return user
 
     # Set up dependency overrides
     app.dependency_overrides[deps.get_db] = override_get_db
@@ -269,9 +289,10 @@ def normal_user(db_session):
         username="testuser",
         email="testuser@example.com",
         full_name="Test User",
-        hashed_password="hashed_password",
+        hashed_password="$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW",
         is_active=True,
         is_superuser=False,
+        role=UserRole.DEVELOPER,
     )
     db_session.add(user)
     db_session.commit()
@@ -286,9 +307,10 @@ def superuser(db_session):
         username="admin",
         email="admin@example.com",
         full_name="Admin User",
-        hashed_password="hashed_password",
+        hashed_password="$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW",
         is_active=True,
         is_superuser=True,
+        role=UserRole.ADMIN,
     )
     db_session.add(user)
     db_session.commit()
@@ -297,13 +319,39 @@ def superuser(db_session):
 
 
 @pytest.fixture
-def mock_auth(normal_user):
+def mock_auth(normal_user, monkeypatch):
     """Mock the authentication dependencies."""
-    def override_get_current_user():
+    async def override_get_current_user():
         return normal_user
 
     def override_get_current_active_user():
         return normal_user
+
+    # Mock Cognito auth service
+    def mock_get_user_with_groups(*args, **kwargs):
+        return {
+            "username": normal_user.username,
+            "attributes": {"email": normal_user.email},
+            "groups": ["developer-group"]
+        }
+
+    monkeypatch.setattr(
+        "backend.app.services.auth_service.CognitoAuthService.get_user_with_groups",
+        mock_get_user_with_groups
+    )
+
+    # Mock security token decoder
+    def mock_decode_token(*args, **kwargs):
+        return {
+            "sub": str(normal_user.id),
+            "username": normal_user.username,
+            "email": normal_user.email
+        }
+
+    monkeypatch.setattr(
+        "backend.app.core.security.decode_token",
+        mock_decode_token
+    )
 
     app.dependency_overrides[deps.get_current_user] = override_get_current_user
     app.dependency_overrides[deps.get_current_active_user] = override_get_current_active_user
@@ -315,9 +363,9 @@ def mock_auth(normal_user):
 
 
 @pytest.fixture
-def mock_auth_superuser(superuser):
+def mock_auth_superuser(superuser, monkeypatch):
     """Mock the authentication dependencies to return a superuser."""
-    def override_get_current_user():
+    async def override_get_current_user():
         return superuser
 
     def override_get_current_active_user():
@@ -325,6 +373,32 @@ def mock_auth_superuser(superuser):
 
     def override_get_current_superuser():
         return superuser
+
+    # Mock Cognito auth service
+    def mock_get_user_with_groups(*args, **kwargs):
+        return {
+            "username": superuser.username,
+            "attributes": {"email": superuser.email},
+            "groups": ["admin-group"]
+        }
+
+    monkeypatch.setattr(
+        "backend.app.services.auth_service.CognitoAuthService.get_user_with_groups",
+        mock_get_user_with_groups
+    )
+
+    # Mock security token decoder
+    def mock_decode_token(*args, **kwargs):
+        return {
+            "sub": str(superuser.id),
+            "username": superuser.username,
+            "email": superuser.email
+        }
+
+    monkeypatch.setattr(
+        "backend.app.core.security.decode_token",
+        mock_decode_token
+    )
 
     # Set up dependency overrides
     app.dependency_overrides[deps.get_current_user] = override_get_current_user
@@ -340,7 +414,7 @@ def mock_auth_superuser(superuser):
 
 
 @pytest.fixture
-def test_experiment(db, normal_user):
+def test_experiment(db_session, normal_user):
     """Create a test experiment for testing."""
     experiment = Experiment(
         name="Test Experiment",
@@ -349,14 +423,14 @@ def test_experiment(db, normal_user):
         owner_id=normal_user.id,
         status=ExperimentStatus.DRAFT.value,
     )
-    db.add(experiment)
-    db.commit()
-    db.refresh(experiment)
+    db_session.add(experiment)
+    db_session.commit()
+    db_session.refresh(experiment)
     return experiment
 
 
 @pytest.fixture
-def active_experiment(db, normal_user):
+def active_experiment(db_session, normal_user):
     """Create an active test experiment for testing."""
     experiment = Experiment(
         name="Active Experiment",
@@ -365,18 +439,27 @@ def active_experiment(db, normal_user):
         status=ExperimentStatus.ACTIVE,
         owner_id=normal_user.id,
     )
-    db.add(experiment)
-    db.commit()
-    db.refresh(experiment)
+    db_session.add(experiment)
+    db_session.commit()
+    db_session.refresh(experiment)
     return experiment
 
 
 @pytest.fixture
-def mock_api_key():
+def mock_api_key(monkeypatch):
     """Mock the API key dependency."""
+    user = User(
+        username="api_user",
+        email="api@example.com",
+        full_name="API User",
+        hashed_password="$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW",
+        is_active=True,
+        is_superuser=False,
+        role=UserRole.DEVELOPER,
+    )
 
     def override_get_api_key(**kwargs):
-        return {"key": "test_api_key", "valid": True}
+        return user
 
     # Set up dependency override
     app.dependency_overrides[deps.get_api_key] = override_get_api_key

@@ -100,3 +100,140 @@
 - For experiment tests:
   - Use regular synchronous test functions
   - Call dependency functions directly without `await`
+
+## Experiment Scheduling
+
+### Implementation
+- Experiment scheduling functionality allows setting future start and end dates for experiments
+- The `update_experiment_schedule` service method handles schedule updates
+- API endpoint for updating schedules: `PUT /api/v1/experiments/{experiment_id}/schedule`
+- Schedule configuration includes:
+  - `start_date`: When the experiment should automatically activate
+  - `end_date`: When the experiment should automatically complete
+  - `time_zone`: Time zone for interpreting the dates (default: UTC)
+- Experiments must be in DRAFT or PAUSED status to be scheduled
+- End date must be after start date with a minimum duration of 1 hour
+
+### Scheduler Implementation
+- A background task scheduler is implemented in `backend/app/core/scheduler.py` that automatically transitions experiments based on their scheduled dates
+- The scheduler:
+  - Runs periodically (every 15 minutes by default) to check for experiments that need status updates
+  - Activates experiments when current time reaches or passes their `start_date`
+  - Completes experiments when current time reaches or passes their `end_date`
+  - Logs all automatic status transitions
+  - Handles timezone conversions using the stored `time_zone` metadata
+- Key components:
+  - `ExperimentScheduler` class manages the scheduling process
+  - `process_scheduled_experiments()` method performs the state transitions
+  - The scheduler is started/stopped automatically when the FastAPI application starts/stops
+  - Admin-only endpoint `POST /api/v1/experiments/schedules/process` for manually triggering the scheduler
+
+### Test Considerations
+- When testing the scheduler, use the provided unit tests in `backend/tests/unit/services/test_experiment_scheduler.py`
+- Test activation (DRAFT → ACTIVE) and completion (ACTIVE → COMPLETED) transitions
+- Mock the database session when testing the scheduler
+- Test timezone handling
+- For schedule API tests, ensure proper authentication mocking via:
+  ```python
+  with patch("backend.app.api.deps.get_current_user", return_value=mock_current_user):
+      response = client.put(...)
+  ```
+
+## Test Environment Configuration
+
+### Database Setup
+- Ensure PostgreSQL is running locally in Docker for tests
+- Database connection string should use `localhost` on macOS
+- Test users must have a `hashed_password` value set to avoid integrity errors
+
+### Authentication Setup
+- Mock dependencies that involve AWS Cognito for API tests
+- For API test fixtures, provide mock users with required fields
+- Use a structure like:
+  ```python
+  user = User(
+      id=uuid4(),
+      username="test_user",
+      email="test@example.com",
+      is_superuser=True,
+      hashed_password="$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW"  # Password hash
+  )
+  ```
+- Properly mock authentication with:
+  ```python
+  async def mock_get_current_user():
+      return user
+  monkeypatch.setattr("backend.app.api.deps.get_current_user", mock_get_current_user)
+  ```
+
+### Complete Authentication Mocking for API Tests
+- For API tests that use tokens, you need to mock multiple components of the auth system:
+
+1. Mock the `get_current_user` and `get_current_active_user` dependencies:
+   ```python
+   with patch("backend.app.api.deps.get_current_user", AsyncMock(return_value=user)), \
+        patch("backend.app.api.deps.get_current_active_user", MagicMock(return_value=user)):
+   ```
+
+2. Mock the token decoding to bypass AWS Cognito validation:
+   ```python
+   with patch("backend.app.core.security.decode_token",
+             MagicMock(return_value={"sub": str(user.id), "username": user.username})):
+   ```
+
+3. Mock the Cognito auth service to return user data with appropriate groups:
+   ```python
+   with patch("backend.app.services.auth_service.CognitoAuthService.get_user_with_groups",
+             MagicMock(return_value={
+                 "username": user.username,
+                 "attributes": {"email": user.email},
+                 "groups": ["admin-group"]  # This will map to ADMIN role
+             })):
+   ```
+
+4. For fixtures that provide tokens, include all these mocks:
+   ```python
+   @pytest.fixture
+   def admin_token(admin_user, monkeypatch):
+       token = "mock_admin_token"
+       # Mock get_current_user
+       async def mock_get_current_user():
+           return admin_user
+       monkeypatch.setattr("backend.app.api.deps.get_current_user", mock_get_current_user)
+
+       # Mock get_current_active_user
+       def mock_get_current_active_user():
+           return admin_user
+       monkeypatch.setattr("backend.app.api.deps.get_current_active_user", mock_get_current_active_user)
+
+       # Mock auth_service.get_user_with_groups
+       def mock_get_user_with_groups(*args, **kwargs):
+           return {
+               "username": admin_user.username,
+               "attributes": {"email": admin_user.email},
+               "groups": ["admin-group"]
+           }
+       monkeypatch.setattr("backend.app.services.auth_service.CognitoAuthService.get_user_with_groups",
+                          mock_get_user_with_groups)
+
+       # Mock token decoder
+       def mock_decode_token(*args, **kwargs):
+           return {"sub": str(admin_user.id), "username": admin_user.username}
+       monkeypatch.setattr("backend.app.core.security.decode_token", mock_decode_token)
+
+       return token
+   ```
+
+### Running Tests
+- Activate the virtual environment before running tests:
+  ```
+  cd /Users/ashishmarkanday/github/experimentation-platform && source venv/bin/activate
+  ```
+- Set environment variables for testing:
+  ```
+  APP_ENV=test TESTING=true
+  ```
+- Run specific test modules with:
+  ```
+  python -m pytest backend/tests/unit/services/test_experiment_scheduling.py -v
+  ```
