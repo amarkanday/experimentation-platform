@@ -9,6 +9,7 @@ This directory contains documentation for various issues and their fixes.
 - [Feature Flag Permission Integration](feature_flag_permission_integration.md)
 - [Pydantic V2 Compatibility](pydantic_v2_compatibility.md)
 - [Deprecation Warnings Fixes](deprecation-warnings-fixes.md)
+- [Dependency Injection Fixes](dependency_injection_fixes.md)
 
 ## Testing Issues
 

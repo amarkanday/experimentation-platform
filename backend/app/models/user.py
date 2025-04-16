@@ -78,36 +78,73 @@ role_permission_association = Table(
 
 
 class User(Base, BaseModel):
-    """User model for authentication and authorization."""
+    """User model for authentication and ownership."""
 
     __tablename__ = "users"
 
-    username = Column(String(50), unique=True, nullable=False, index=True)
-    email = Column(String(100), unique=True, nullable=False, index=True)
-    hashed_password = Column(String(255), nullable=False)
-    full_name = Column(String(100))
-    is_active = Column(Boolean, default=True, nullable=False)
-    is_superuser = Column(Boolean, default=False, nullable=False)
-    last_login = Column(DateTime)
+    username = Column(String(100), unique=True, index=True)
+    email = Column(String(100), unique=True, index=True)
+    hashed_password = Column(String(255), nullable=True)
+    is_active = Column(Boolean, default=True)
+    is_superuser = Column(Boolean, default=False)
+    role = Column(Enum(UserRole), default=UserRole.VIEWER)
+    external_id = Column(String(255), unique=True, nullable=True)  # Cognito ID
+    first_name = Column(String(100), nullable=True)
+    last_name = Column(String(100), nullable=True)
+    settings = Column(JSONB, default={})
     preferences = Column(JSONB, default={})
-    role = Column(Enum(UserRole), nullable=False, default=UserRole.VIEWER)
 
-    # Relationships with explicit back_populates
-    feature_flags = relationship(
-        "FeatureFlag", back_populates="owner", cascade="all, delete-orphan"
-    )
-    experiments = relationship(
-        "Experiment", back_populates="owner", cascade="all, delete-orphan"
-    )
-    api_keys = relationship(
-        "APIKey", back_populates="user", cascade="all, delete-orphan"
-    )
-    reports = relationship(
-        "Report", back_populates="owner", cascade="all, delete-orphan"
-    )
-    rollout_schedules = relationship(
-        "RolloutSchedule", back_populates="owner", cascade="all, delete-orphan"
-    )
+    # Relationships
+    experiments = relationship("Experiment", back_populates="owner")
+    feature_flags = relationship("FeatureFlag", back_populates="owner")
+    reports = relationship("Report", back_populates="owner")
+    api_keys = relationship("APIKey", back_populates="user", cascade="all, delete-orphan")
+    segments = relationship("Segment", back_populates="owner", cascade="all, delete-orphan")
+    rollout_schedules = relationship("RolloutSchedule", back_populates="owner", cascade="all, delete-orphan")
+
+    def __init__(self, **kwargs):
+        """Initialize a user with proper handling of full_name and preferences."""
+        # Extract full_name if present and not None
+        full_name = kwargs.pop('full_name', None)
+
+        # Extract preferences if present or set to default empty dict
+        preferences = kwargs.pop('preferences', {})
+
+        # Make sure we handle the case where full_name is passed but is None
+        if 'full_name' in kwargs:
+            kwargs.pop('full_name')
+
+        # Initialize using parent class
+        super().__init__(**kwargs)
+
+        # Set preferences
+        self.preferences = preferences
+
+        # Set the full_name using the property setter if provided
+        if full_name is not None:
+            self.full_name = full_name
+
+    @property
+    def full_name(self):
+        """Return the full name by combining first and last name."""
+        if self.first_name and self.last_name:
+            return f"{self.first_name} {self.last_name}"
+        elif self.first_name:
+            return self.first_name
+        elif self.last_name:
+            return self.last_name
+        return None
+
+    @full_name.setter
+    def full_name(self, value):
+        """Set first_name based on the full name provided."""
+        if value:
+            parts = value.split(' ', 1)
+            self.first_name = parts[0]
+            self.last_name = parts[1] if len(parts) > 1 else None
+        else:
+            self.first_name = None
+            self.last_name = None
 
     @declared_attr
     def __table_args__(cls):

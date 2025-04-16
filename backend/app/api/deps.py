@@ -3,7 +3,7 @@ import asyncio
 from fastapi import Depends, HTTPException, status, Header, Request
 from fastapi.security import OAuth2PasswordBearer, APIKeyHeader, HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, SecretStr
 from jose import jwt
 
 from backend.app.core.config import settings
@@ -13,7 +13,7 @@ from backend.app.core.permissions import ResourceType, Action, check_permission,
 from backend.app.core.cognito import map_cognito_groups_to_role, should_be_superuser
 from backend.app.db.session import SessionLocal
 from backend.app.models.user import User, UserRole
-from backend.app.models.experiment import Experiment
+from backend.app.models.experiment import Experiment, ExperimentStatus
 from backend.app.models.feature_flag import FeatureFlag
 from backend.app.models.report import Report
 from backend.app.services.auth_service import auth_service
@@ -397,6 +397,10 @@ def get_experiment_by_key(
 
     if not experiment:
         raise HTTPException(status_code=404, detail="Experiment not found")
+
+    # Check if experiment is active
+    if hasattr(experiment, 'status') and experiment.status != ExperimentStatus.ACTIVE:
+        raise HTTPException(status_code=400, detail="Inactive experiment")
 
     cache_enabled = getattr(settings, "CACHE_ENABLED", False)
     if cache_enabled:

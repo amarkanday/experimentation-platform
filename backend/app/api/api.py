@@ -18,6 +18,7 @@ from backend.app.api.v1.endpoints import (
     events,
     results,
     rollout_schedules,
+    metrics,
 )
 
 # Import the sample size calculator router
@@ -45,6 +46,9 @@ api_router_v1.include_router(events.router, prefix="/events", tags=["Events"])
 api_router_v1.include_router(results.router, prefix="/results", tags=["Results"])
 api_router_v1.include_router(
     rollout_schedules.router, prefix="/rollout-schedules", tags=["Rollout Schedules"]
+)
+api_router_v1.include_router(
+    metrics.router, prefix="/metrics", tags=["Metrics"]
 )
 
 # Add new utility endpoints
@@ -99,5 +103,9 @@ tags_metadata = [
     {
         "name": "Rollout Schedules",
         "description": "Operations for managing gradual feature flag rollout schedules",
+    },
+    {
+        "name": "Metrics",
+        "description": "Operations for retrieving and analyzing feature flag metrics and performance data",
     },
 ]

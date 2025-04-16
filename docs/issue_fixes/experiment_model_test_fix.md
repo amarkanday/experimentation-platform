@@ -10,6 +10,16 @@ AttributeError: 'dict' object has no attribute 'owner_id'
 
 This error occurred in the `get_experiment_access` function, which was trying to access the `owner_id` attribute of what was expected to be an experiment model object but was actually a dictionary.
 
+## Update: Related Dependency Injection Fixes
+
+This issue was part of a larger pattern of dependency injection and type handling problems that have now been comprehensively addressed. A more thorough dependency injection fix has been implemented that resolves similar issues across the codebase:
+
+1. The `get_experiment_access` function has been updated to properly handle both model objects and dictionary representations using a Union type: `Union[Experiment, Dict[str, Any]]`
+2. A duplicate definition of the `get_experiment_access` function was removed, preventing ambiguity in dependency resolution
+3. Mock objects have been enhanced to better represent real model behavior in tests
+
+For full details on the comprehensive dependency injection fixes, see [Dependency Injection Fixes](dependency_injection_fixes.md).
+
 ## Root Cause
 
 The issue was related to mock objects and typing in the tests for experiment endpoints:

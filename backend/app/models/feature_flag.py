@@ -70,6 +70,21 @@ class FeatureFlag(Base, BaseModel):
         back_populates="feature_flag",
         cascade="all, delete-orphan",
     )
+    raw_metrics = relationship(
+        "RawMetric",
+        back_populates="feature_flag",
+        cascade="all, delete-orphan"
+    )
+    aggregated_metrics = relationship(
+        "AggregatedMetric",
+        back_populates="feature_flag",
+        cascade="all, delete-orphan"
+    )
+    error_logs = relationship(
+        "ErrorLog",
+        back_populates="feature_flag",
+        cascade="all, delete-orphan"
+    )
 
     @declared_attr
     def __table_args__(cls):

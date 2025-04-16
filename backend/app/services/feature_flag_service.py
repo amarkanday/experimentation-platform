@@ -3,8 +3,9 @@
 import logging
 import hashlib
 import json
+import time
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, Tuple
 from uuid import UUID
 
 from sqlalchemy import func, and_, or_, desc
@@ -12,6 +13,8 @@ from sqlalchemy.orm import Session, joinedload
 
 from backend.app.models.feature_flag import FeatureFlag, FeatureFlagStatus
 from backend.app.schemas.feature_flag import FeatureFlagCreate, FeatureFlagUpdate
+from backend.app.services.metrics_service import MetricsService
+from backend.app.schemas.metrics import ErrorLogCreate
 
 
 logger = logging.getLogger(__name__)
@@ -251,25 +254,86 @@ class FeatureFlagService:
         Returns:
             Boolean indicating if the flag is enabled for this user
         """
-        # If flag is not active, return False
-        if flag.status != FeatureFlagStatus.ACTIVE.value:
-            return False
+        # Track evaluation time for latency metrics
+        start_time = time.time()
 
-        # If flag has no rules, use the default value
-        if not flag.rules or len(flag.rules) == 0:
-            return self._evaluate_percentage_rollout(flag, user_id)
+        # Initialize tracking variables
+        targeting_rule_id = None
+        result = False
+        error = None
 
-        # Evaluate each rule
-        context = context or {}
-        for rule in flag.rules:
-            if self._evaluate_rule(rule, user_id, context):
-                # If rule matches, use its rollout percentage
-                return self._evaluate_percentage_rollout(
-                    flag, user_id, rule.get("percentage", 100)
+        try:
+            # If flag is not active, return False
+            if flag.status != FeatureFlagStatus.ACTIVE.value:
+                result = False
+                return result
+
+            # If flag has no rules, use the default value
+            if not flag.targeting_rules or len(flag.targeting_rules) == 0:
+                result = self._evaluate_percentage_rollout(flag, user_id)
+                return result
+
+            # Evaluate each rule
+            context = context or {}
+
+            # Extract rules from targeting_rules field (which is a JSONB field)
+            rules = flag.targeting_rules
+
+            if isinstance(rules, list):
+                for i, rule in enumerate(rules):
+                    rule_id = rule.get("id", f"rule_{i}")
+                    if self._evaluate_rule(rule, user_id, context):
+                        # If rule matches, use its rollout percentage
+                        targeting_rule_id = rule_id
+                        result = self._evaluate_percentage_rollout(
+                            flag, user_id, rule.get("percentage", 100)
+                        )
+                        return result
+
+            # If no rules match, use the default value
+            result = self._evaluate_percentage_rollout(flag, user_id)
+            return result
+
+        except Exception as e:
+            # Log and record the error
+            error = str(e)
+            logger.error(f"Error evaluating flag {flag.key} for user {user_id}: {error}")
+
+            # Default behavior on error is to return False
+            result = False
+            return result
+
+        finally:
+            # Calculate latency
+            latency_ms = (time.time() - start_time) * 1000  # Convert to milliseconds
+
+            try:
+                # Record metrics (in a separate try-except to avoid affecting the main flow)
+                MetricsService.record_flag_evaluation(
+                    db=self.db,
+                    feature_flag_id=flag.id,
+                    user_id=user_id,
+                    value=result,
+                    targeting_rule_id=targeting_rule_id,
+                    latency_ms=latency_ms,
+                    metadata={
+                        "context": context,
+                    }
                 )
 
-        # If no rules match, use the default value
-        return self._evaluate_percentage_rollout(flag, user_id)
+                # If there was an error, log it separately
+                if error:
+                    error_data = ErrorLogCreate(
+                        error_type="flag_evaluation_error",
+                        feature_flag_id=flag.id,
+                        user_id=user_id,
+                        message=error,
+                        request_data={"context": context}
+                    )
+                    MetricsService.log_error(db=self.db, data=error_data)
+            except Exception as metrics_error:
+                # Don't let metrics collection errors affect flag evaluation
+                logger.error(f"Failed to record metrics: {str(metrics_error)}")
 
     def _evaluate_rule(
         self, rule: Dict[str, Any], user_id: str, context: Dict[str, Any]
@@ -331,7 +395,9 @@ class FeatureFlagService:
                     and value in context_value
                 ):
                     return False
-                elif operator == "in" and context_value not in value:
+                elif operator == "in" and not (
+                    isinstance(value, (list, tuple)) and context_value in value
+                ):
                     return False
 
             # All conditions passed
@@ -356,7 +422,7 @@ class FeatureFlagService:
         """
         # Use flag's percentage if not specified
         if percentage is None:
-            percentage = flag.percentage
+            percentage = flag.rollout_percentage or 0
 
         # If percentage is 0 or 100, short-circuit
         if percentage <= 0:

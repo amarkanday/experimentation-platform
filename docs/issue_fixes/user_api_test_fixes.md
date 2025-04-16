@@ -3,6 +3,17 @@
 ## Overview
 This document summarizes the issues encountered and fixes implemented for the user API endpoint tests in the experimentation platform's backend service.
 
+## Update: Dependency Injection Fixes
+
+The user API tests are now fully working thanks to comprehensive dependency injection fixes that were implemented. The key improvements include:
+
+1. **Fixed Type Annotations**: Properly typed parameter annotations in dependency functions to handle both model objects and their dictionary representations
+2. **Enhanced Mock Objects**: Improved mock objects to properly mimic real database model behavior
+3. **Role Relationship Fixes**: Fixed how user roles are handled in tests and in the actual code
+4. **Removed Duplicate Dependencies**: Fixed a duplicate `get_experiment_access` function definition causing dependency resolution issues
+
+For full details on these fixes, please see [Dependency Injection Fixes](dependency_injection_fixes.md).
+
 ## Issues and Fixes
 
 ### 1. Update User Tests Failing with 422 Unprocessable Entity Errors

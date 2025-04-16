@@ -12,3 +12,4 @@ from backend.app.models.experiment import Experiment, Variant, Metric
 from backend.app.models.assignment import Assignment
 from backend.app.models.event import Event
 from backend.app.models.feature_flag import FeatureFlag, FeatureFlagOverride
+from backend.app.models.metrics.metric import RawMetric, AggregatedMetric, ErrorLog

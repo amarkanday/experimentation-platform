@@ -5,6 +5,7 @@ import redis.asyncio as redis
 
 from backend.app.api import deps
 from backend.app.core.config import settings
+from backend.app.models.experiment import ExperimentStatus
 
 
 # Create mock models instead of importing the actual ones to avoid circular dependencies
@@ -14,10 +15,42 @@ class MockUser:
     email = None
     is_active = None
     is_superuser = None
+    role = None
+    first_name = None
+    last_name = None
 
     def __init__(self, **kwargs):
+        # Extract full_name if present and not None
+        full_name = kwargs.pop('full_name', None)
+
         for key, value in kwargs.items():
             setattr(self, key, value)
+
+        # Set the full_name using the property setter if provided
+        if full_name is not None:
+            self.full_name = full_name
+
+    @property
+    def full_name(self):
+        """Return the full name by combining first and last name."""
+        if self.first_name and self.last_name:
+            return f"{self.first_name} {self.last_name}"
+        elif self.first_name:
+            return self.first_name
+        elif self.last_name:
+            return self.last_name
+        return None
+
+    @full_name.setter
+    def full_name(self, value):
+        """Set first_name and last_name based on the full name provided."""
+        if value:
+            parts = value.split(' ', 1)
+            self.first_name = parts[0]
+            self.last_name = parts[1] if len(parts) > 1 else None
+        else:
+            self.first_name = None
+            self.last_name = None
 
     def __eq__(self, other):
         # Simple equality check for our mock objects to ensure tests work
@@ -179,8 +212,9 @@ class TestAuthDependencies:
                     "given_name": "Test",
                     "family_name": "User",
                 },
+                "groups": ["developer-group"]
             }
-            mock_auth_service.get_user.return_value = mock_user_data
+            mock_auth_service.get_user_with_groups.return_value = mock_user_data
 
             # Mock db session
             mock_db = MagicMock()
@@ -189,8 +223,10 @@ class TestAuthDependencies:
             mock_user = MockUser(
                 username="test_user",
                 email="test@example.com",
-                full_name="Test User",
+                first_name="Test",
+                last_name="User",
                 is_active=True,
+                role="developer"
             )
             mock_db.query.return_value.filter.return_value.first.return_value = (
                 mock_user
@@ -198,19 +234,22 @@ class TestAuthDependencies:
 
             # Patch the User model import and other necessary patching
             with patch("backend.app.api.deps.User", MockUser), \
-                 patch("backend.app.api.deps.User.username", MockUser.username):
+                 patch("backend.app.api.deps.User.username", MockUser.username), \
+                 patch("backend.app.api.deps.UserRole"), \
+                 patch("backend.app.api.deps.map_cognito_groups_to_role", return_value="developer"), \
+                 patch("backend.app.api.deps.should_be_superuser", return_value=False):
                 # Call function
                 user = deps.get_current_user("valid_token", mock_db)
 
                 # Verify
                 assert user == mock_user
-                mock_auth_service.get_user.assert_called_once_with("valid_token")
+                mock_auth_service.get_user_with_groups.assert_called_once_with("valid_token")
 
     def test_get_current_user_invalid_token(self):
         """Test get_current_user with invalid token."""
         with patch("backend.app.api.deps.auth_service") as mock_auth_service:
             # Mock error from auth service
-            mock_auth_service.get_user.side_effect = ValueError("Invalid token")
+            mock_auth_service.get_user_with_groups.side_effect = ValueError("Invalid token")
 
             # Call function
             with pytest.raises(HTTPException) as excinfo:
@@ -263,7 +302,7 @@ class TestExperimentAccessDependency:
         mock_experiment = MockExperiment(id=1, owner_id=1)
 
         # Mock user
-        mock_user = MockUser(id=1, is_superuser=False)
+        mock_user = MockUser(id=1, is_superuser=False, role="developer")
 
         # Call function
         experiment = deps.get_experiment_access(mock_experiment, mock_user)
@@ -317,7 +356,7 @@ class TestExperimentAccessDependency:
 
         # Verify
         assert excinfo.value.status_code == 403
-        assert "You don't have permission to access this experiment" in excinfo.value.detail
+        assert "You don't have permission to view experiments" in excinfo.value.detail
 
 
 class TestAPIKeyDependency:
@@ -376,14 +415,17 @@ class TestExperimentByKeyDependency:
     def test_get_experiment_by_key_active(self):
         """Test get_experiment_by_key with active experiment."""
         # Mock active experiment
-        mock_experiment = MockExperiment(id=1, key="test_experiment", is_active=True)
+        mock_experiment = MockExperiment(
+            id=1, key="test_experiment", status=ExperimentStatus.ACTIVE
+        )
 
         # Mock db session
         mock_db = MagicMock()
         mock_db.query().filter().first.return_value = mock_experiment
 
         # Patch the Experiment model
-        with patch("backend.app.api.deps.Experiment", MockExperiment):
+        with patch("backend.app.api.deps.Experiment", MockExperiment), \
+             patch("backend.app.api.deps.ExperimentStatus", ExperimentStatus):
             # Call function
             experiment = deps.get_experiment_by_key("test_experiment", mock_db)
 
@@ -410,7 +452,7 @@ class TestExperimentByKeyDependency:
         """Test get_experiment_by_key with inactive experiment."""
         # Mock inactive experiment
         mock_experiment = MockExperiment(
-            id=1, key="inactive_experiment", is_active=False
+            id=1, key="inactive_experiment", status=ExperimentStatus.DRAFT
         )
 
         # Mock db session
@@ -418,7 +460,8 @@ class TestExperimentByKeyDependency:
         mock_db.query().filter().first.return_value = mock_experiment
 
         # Patch the Experiment model
-        with patch("backend.app.api.deps.Experiment", MockExperiment):
+        with patch("backend.app.api.deps.Experiment", MockExperiment), \
+             patch("backend.app.api.deps.ExperimentStatus", ExperimentStatus):
             # Call function
             with pytest.raises(HTTPException) as excinfo:
                 deps.get_experiment_by_key("inactive_experiment", mock_db)
@@ -562,8 +605,10 @@ class TestIntegrationDependencyInjection:
             mock_user_data = {
                 "username": "test_user",
                 "attributes": {"email": "test@example.com"},
+                "groups": ["viewer"],  # Add groups to user data
             }
-            mock_auth_service.get_user.return_value = mock_user_data
+            # Replace get_user with get_user_with_groups
+            mock_auth_service.get_user_with_groups.return_value = mock_user_data
 
             # Mock user
             mock_user = MockUser(
@@ -571,6 +616,7 @@ class TestIntegrationDependencyInjection:
                 username="test_user",
                 email="test@example.com",
                 is_active=True,
+                role="viewer",  # Add role to mock user
             )
 
             # Mock db session
@@ -605,7 +651,7 @@ class TestIntegrationDependencyInjection:
             assert accessed_experiment == mock_experiment
 
             # Verify the full chain worked
-            mock_auth_service.get_user.assert_called_once_with(mock_token)
+            mock_auth_service.get_user_with_groups.assert_called_once_with(mock_token)
 
     def test_integration_auth_experiment_access(self):
         """Test integration of auth and experiment access."""
@@ -620,7 +666,7 @@ class TestIntegrationDependencyInjection:
                 "username": "test_user",
                 "attributes": {"email": "test@example.com"},
             }
-            mock_auth_service.get_user.return_value = mock_user_data
+            mock_auth_service.get_user_with_groups.return_value = mock_user_data
 
             # Mock user with MockUser
             mock_user = MockUser(

@@ -22,6 +22,7 @@ from backend.app.middleware.error_middleware import ErrorMiddleware
 from backend.app.middleware.metrics_middleware import MetricsMiddleware
 from backend.app.core.scheduler import experiment_scheduler
 from backend.app.core.rollout_scheduler import rollout_scheduler
+from backend.app.core.metrics_scheduler import metrics_scheduler
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -70,6 +71,9 @@ async def startup_event():
     logger.info("Starting rollout scheduler")
     await rollout_scheduler.start()
 
+    logger.info("Starting metrics scheduler")
+    await metrics_scheduler.start()
+
 @app.on_event("shutdown")
 async def shutdown_event():
     """Stop background tasks on application shutdown."""
@@ -78,6 +82,9 @@ async def shutdown_event():
 
     logger.info("Stopping rollout scheduler")
     await rollout_scheduler.stop()
+
+    logger.info("Stopping metrics scheduler")
+    await metrics_scheduler.stop()
 
 # Add OpenAPI documentation routes
 @app.get("/api/v1/openapi.json", include_in_schema=False)
