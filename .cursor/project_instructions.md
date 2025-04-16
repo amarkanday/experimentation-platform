@@ -237,3 +237,91 @@
   ```
   python -m pytest backend/tests/unit/services/test_experiment_scheduling.py -v
   ```
+
+## Feature Flag Rollout Schedules
+
+The platform supports gradual rollout of feature flags through rollout schedules. This enables controlled, staged deployments of features with configurable criteria for progression.
+
+### Key Components
+
+1. **Rollout Schedules**: Define a plan for gradually increasing a feature flag's rollout percentage over time.
+2. **Rollout Stages**: Individual steps within a schedule, each with a target percentage and conditions for activation.
+3. **Triggers**: Criteria that determine when to progress to the next stage (time-based, metric-based, or manual).
+
+### Database Models
+
+- `RolloutSchedule`: Main model for rollout schedules.
+- `RolloutStage`: Model for individual stages within a schedule.
+
+### API Endpoints
+
+All rollout schedule endpoints are available under `/api/v1/rollout-schedules`.
+
+- `POST /`: Create a new rollout schedule
+- `GET /`: List rollout schedules with optional filtering
+- `GET /{schedule_id}`: Get a specific rollout schedule
+- `PUT /{schedule_id}`: Update a rollout schedule
+- `DELETE /{schedule_id}`: Delete a rollout schedule
+- `POST /{schedule_id}/activate`: Activate a rollout schedule
+- `POST /{schedule_id}/pause`: Pause an active rollout schedule
+- `POST /{schedule_id}/cancel`: Cancel a rollout schedule
+- `POST /{schedule_id}/stages`: Add a stage to a rollout schedule
+- `PUT /stages/{stage_id}`: Update a rollout stage
+- `DELETE /stages/{stage_id}`: Delete a rollout stage
+- `POST /stages/{stage_id}/advance`: Manually advance a stage
+
+### Scheduler
+
+The `RolloutScheduler` runs in the background to automatically process active rollout schedules. It:
+
+1. Checks for schedules with pending stages that are eligible for activation
+2. Updates feature flag rollout percentages according to the stages
+3. Transitions stages and schedules through their lifecycle (pending → in_progress → completed)
+
+### Usage Example
+
+```python
+# Create a new rollout schedule
+schedule_data = {
+    "name": "Gradual Rollout for Feature X",
+    "description": "Gradually roll out Feature X over 3 weeks",
+    "feature_flag_id": "123e4567-e89b-12d3-a456-426614174000",
+    "start_date": "2023-12-01T00:00:00Z",
+    "end_date": "2023-12-31T23:59:59Z",
+    "max_percentage": 100,
+    "min_stage_duration": 24,  # Minimum 24 hours between stages
+    "stages": [
+        {
+            "name": "Initial Rollout",
+            "description": "First 10% of users",
+            "stage_order": 1,
+            "target_percentage": 10,
+            "trigger_type": "time_based",
+            "start_date": "2023-12-01T00:00:00Z"
+        },
+        {
+            "name": "Expanded Rollout",
+            "description": "Expand to 50% of users",
+            "stage_order": 2,
+            "target_percentage": 50,
+            "trigger_type": "time_based",
+            "start_date": "2023-12-15T00:00:00Z"
+        },
+        {
+            "name": "Full Rollout",
+            "description": "Roll out to all users",
+            "stage_order": 3,
+            "target_percentage": 100,
+            "trigger_type": "manual"
+        }
+    ]
+}
+```
+
+### Common Gotchas
+
+1. Rollout percentages must be non-decreasing across stages (e.g., 10% → 50% → 100%).
+2. Active schedules cannot have their stages deleted.
+3. Stage orders must be sequential without gaps.
+4. For time-based triggers, ensure the dates are in UTC timezone.
+5. Manual stages must be explicitly advanced using the API.
