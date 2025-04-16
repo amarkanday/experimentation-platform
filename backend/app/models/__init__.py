@@ -21,6 +21,13 @@ from .feature_flag import FeatureFlag, FeatureFlagOverride, FeatureFlagStatus
 from .event import Event, EventType
 from .assignment import Assignment
 from .api_key import APIKey
+from .rollout_schedule import (
+    RolloutSchedule,
+    RolloutStage,
+    RolloutScheduleStatus,
+    RolloutStageStatus,
+    TriggerType,
+)
 
 # Explicitly list all models that should be part of the base metadata
 __all__ = [
@@ -46,6 +53,11 @@ __all__ = [
     "FeatureFlagStatus",
     "EventType",
     "UserRole",
+    "RolloutSchedule",
+    "RolloutStage",
+    "RolloutScheduleStatus",
+    "RolloutStageStatus",
+    "TriggerType",
 ]
 
 # Remove or comment out any premature configuration

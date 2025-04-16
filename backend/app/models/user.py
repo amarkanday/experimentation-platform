@@ -105,6 +105,9 @@ class User(Base, BaseModel):
     reports = relationship(
         "Report", back_populates="owner", cascade="all, delete-orphan"
     )
+    rollout_schedules = relationship(
+        "RolloutSchedule", back_populates="owner", cascade="all, delete-orphan"
+    )
 
     @declared_attr
     def __table_args__(cls):

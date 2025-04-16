@@ -65,6 +65,11 @@ class FeatureFlag(Base, BaseModel):
     reports = relationship(
         "Report", back_populates="feature_flag", cascade="all, delete"
     )
+    rollout_schedules = relationship(
+        "RolloutSchedule",
+        back_populates="feature_flag",
+        cascade="all, delete-orphan",
+    )
 
     @declared_attr
     def __table_args__(cls):
