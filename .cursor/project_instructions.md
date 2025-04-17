@@ -55,6 +55,16 @@
    - Use the compatibility layer in `compat.py` for transition
    - Gradually migrate old code to new patterns
 
+5. **Use Pydantic v2 Patterns**:
+   - The codebase uses Pydantic v2.10.6
+   - Always use Pydantic v2 patterns:
+     - Replace `validator` with `field_validator`
+     - Replace class-based `Config` with `model_config = ConfigDict(...)`
+     - Use `model_validator` for complex validations
+   - Import from the correct paths:
+     - Use `from pydantic import field_validator, model_validator, ConfigDict`
+     - Use `from pydantic_settings import BaseSettings, SettingsConfigDict` for settings
+
 ### Automatic Verification
 - Run `python standardize_metrics_imports.py --check` to detect inconsistencies
 - Run `python -m pytest backend/tests/unit/metrics/test_metrics_imports.py` to verify imports
@@ -361,3 +371,78 @@ schedule_data = {
 3. Stage orders must be sequential without gaps.
 4. For time-based triggers, ensure the dates are in UTC timezone.
 5. Manual stages must be explicitly advanced using the API.
+
+## Safety Monitoring APIs
+
+The platform includes safety monitoring functionality for feature flags to detect and respond to issues in production.
+
+### Key Components
+
+1. **Safety Checks**: Automated checks that monitor metrics like error rates, latency, and API errors.
+2. **Rollback Mechanism**: Ability to automatically or manually roll back problematic feature flags.
+3. **Safety Settings**: Global configuration for thresholds, monitoring windows, and automatic responses.
+4. **Safety Reports**: Comprehensive reports on feature flag health and safety metrics.
+
+### API Endpoints
+
+All safety monitoring endpoints are available under `/api/v1/safety`.
+
+- `GET /settings`: Get current safety monitoring settings (superuser only)
+- `PUT /settings`: Update safety monitoring settings (superuser only)
+- `POST /check`: Check safety metrics for a specific feature flag
+- `GET /check/{feature_flag_id}`: Check safety for a specific feature flag
+- `GET /check`: Check safety for all active feature flags
+- `POST /rollback/{feature_flag_id}`: Roll back a feature flag to its previous state
+- `GET /report`: Generate a comprehensive safety report
+
+### Authentication & Permissions
+
+Safety endpoints use different authentication dependencies based on their sensitivity:
+
+1. **Settings Management** (superuser only):
+   - Uses `deps.get_current_superuser` dependency
+   - Example: `get_safety_settings` and `update_safety_settings` endpoints
+
+2. **Safety Monitoring** (all authenticated users):
+   - Uses `deps.get_current_active_user` dependency
+   - Example: `check_feature_flag_safety` and `get_safety_report` endpoints
+
+3. **Feature Flag Rollback** (requires specific permissions):
+   - Uses `deps.get_current_active_user` dependency
+   - Checks `check_permission(current_user, ResourceType.FEATURE_FLAG, Action.UPDATE)`
+   - Example: `rollback_feature_flag` endpoint
+
+### Testing Safety APIs
+
+When writing tests for safety endpoints:
+
+1. Mock the appropriate dependencies:
+   ```python
+   # For superuser endpoints
+   with patch("backend.app.api.deps.get_current_superuser", return_value=mock_user):
+       response = client.get("/api/v1/safety/settings")
+
+   # For standard authenticated endpoints
+   with patch("backend.app.api.deps.get_current_active_user", return_value=mock_user):
+       response = client.get("/api/v1/safety/check")
+   ```
+
+2. For rollback endpoints, also mock the permission check:
+   ```python
+   with patch("backend.app.core.permissions.check_permission", return_value=True):
+       with patch("backend.app.api.deps.get_current_active_user", return_value=mock_user):
+           response = client.post(f"/api/v1/safety/rollback/{feature_flag_id}")
+   ```
+
+3. Create appropriate mock responses from the `SafetyService`:
+   ```python
+   with patch("backend.app.services.safety_service.SafetyService.check_feature_flag_safety") as mock_check:
+       mock_check.return_value = expected_result
+       # Test API call
+   ```
+
+4. Test both success and error scenarios:
+   - 200 OK with valid data
+   - 403 Forbidden when permission is denied
+   - 404 Not Found when resources don't exist
+   - 500 Internal Server Error when service throws unexpected exceptions
