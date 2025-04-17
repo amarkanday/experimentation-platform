@@ -202,24 +202,6 @@ class TestConditionEvaluation:
 
         assert evaluate_condition(condition, PREMIUM_USER_CONTEXT) is False
 
-    def test_months_since(self):
-        """Test the MONTHS_SINCE operator."""
-        now = datetime.now()
-        old_date = now - timedelta(days=365)
-        context = {
-            "now": now.isoformat(),
-            "old_date": old_date.isoformat(),
-        }
-
-        # Test MONTHS_SINCE
-        condition = Condition(
-            attribute="now",
-            operator=OperatorType.MONTHS_SINCE,
-            value=old_date.isoformat(),
-            additional_value="12"  # At least 12 months since old_date, changed from ">=12"
-        )
-        assert evaluate_condition(condition, context) is True
-
 class TestRuleGroupEvaluation:
     """Tests for rule group evaluation with different logical operators."""
 

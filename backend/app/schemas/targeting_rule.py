@@ -37,32 +37,6 @@ class OperatorType(str, Enum):
     CONTAINS_ANY = "contains_any"  # Array contains any element
     MATCH_REGEX = "match_regex"  # String matches regex pattern
 
-    # Advanced string operators
-    LOWERCASE_EQUALS = "lowercase_eq"  # Case-insensitive equality
-    UPPERCASE_EQUALS = "uppercase_eq"  # Uppercase equality
-    FORMAT_MATCHES = "format_matches"  # Match a specific format (like email, phone)
-
-    # Advanced date operators
-    IS_WEEKDAY = "is_weekday"  # Check if a date is a weekday (Mon-Fri)
-    IS_WEEKEND = "is_weekend"  # Check if a date is a weekend (Sat-Sun)
-    IS_BUSINESS_HOURS = "is_business_hours"  # Check if time is within business hours
-    DAYS_SINCE = "days_since"  # Days elapsed since a reference date
-    MONTHS_SINCE = "months_since"  # Months elapsed since a reference date
-
-    # Geolocation operators
-    WITHIN_RADIUS = "within_radius"  # Check if point is within radius of another point
-    IN_COUNTRY = "in_country"  # Check if coordinates are in a country
-    IN_TIMEZONE = "in_timezone"  # Check if coordinates are in a timezone
-
-    # Path-based operators
-    PATH_EXISTS = "path_exists"  # Check if a path exists in the context
-    PATH_EQUALS = "path_eq"  # Check if a nested path equals a value
-    PATH_CONTAINS = "path_contains"  # Check if a nested path contains a value
-
-    # Behavioral operators
-    FREQUENCY_EXCEEDS = "frequency_exceeds"  # Action performed more than X times
-    RECENCY_WITHIN = "recency_within"  # Action performed within recent time period
-
 
 class Condition(BaseModel):
     """A single condition to evaluate against a user attribute."""
