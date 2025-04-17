@@ -7,7 +7,7 @@ This module defines schemas for validation and serialization of metrics-related 
 from typing import Dict, List, Optional, Any, Union
 from datetime import datetime
 from uuid import UUID
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, ConfigDict, field_validator
 
 from backend.app.models.metrics.metric import MetricType, AggregationPeriod
 
@@ -23,8 +23,7 @@ class MetricBase(BaseModel):
     value: Optional[float] = Field(None, description="Numeric value if applicable")
     metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metric metadata")
 
-    class Config:
-        use_enum_values = True
+    model_config = ConfigDict(use_enum_values=True)
 
 
 class RawMetricCreate(MetricBase):
@@ -33,8 +32,8 @@ class RawMetricCreate(MetricBase):
     count: int = Field(1, description="Number of occurrences")
     timestamp: Optional[datetime] = Field(None, description="Timestamp of the metric")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "metric_type": "flag_evaluation",
                 "feature_flag_id": "123e4567-e89b-12d3-a456-426614174000",
@@ -44,6 +43,7 @@ class RawMetricCreate(MetricBase):
                 "metadata": {"browser": "Chrome", "device": "mobile"}
             }
         }
+    )
 
 
 class RawMetricResponse(MetricBase):
@@ -55,15 +55,13 @@ class RawMetricResponse(MetricBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        orm_mode = True
-
+    model_config = ConfigDict(
+        from_attributes=True,
         # Map schema field 'metadata' to model field 'meta_data'
-        model_config = {
-            "fields": {
-                "metadata": {"alias": "meta_data"}
-            }
+        json_schema_extra={
+            "metadata": {"alias": "meta_data"}
         }
+    )
 
 
 class AggregatedMetricBase(BaseModel):
@@ -82,8 +80,7 @@ class AggregatedMetricBase(BaseModel):
     distinct_users: Optional[int] = Field(None, description="Count of distinct users")
     metadata: Optional[Dict[str, Any]] = Field(None, description="Additional aggregated data")
 
-    class Config:
-        use_enum_values = True
+    model_config = ConfigDict(use_enum_values=True)
 
 
 class AggregatedMetricResponse(AggregatedMetricBase):
@@ -93,15 +90,13 @@ class AggregatedMetricResponse(AggregatedMetricBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        orm_mode = True
-
+    model_config = ConfigDict(
+        from_attributes=True,
         # Map schema field 'metadata' to model field 'meta_data'
-        model_config = {
-            "fields": {
-                "metadata": {"alias": "meta_data"}
-            }
+        json_schema_extra={
+            "metadata": {"alias": "meta_data"}
         }
+    )
 
 
 class ErrorLogBase(BaseModel):
@@ -121,8 +116,8 @@ class ErrorLogCreate(ErrorLogBase):
 
     timestamp: Optional[datetime] = Field(None, description="Timestamp of the error")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "error_type": "rule_evaluation_error",
                 "feature_flag_id": "123e4567-e89b-12d3-a456-426614174000",
@@ -131,6 +126,7 @@ class ErrorLogCreate(ErrorLogBase):
                 "request_data": {"context": {"country": "US"}}
             }
         }
+    )
 
 
 class ErrorLogResponse(ErrorLogBase):
@@ -141,15 +137,13 @@ class ErrorLogResponse(ErrorLogBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        orm_mode = True
-
+    model_config = ConfigDict(
+        from_attributes=True,
         # Map schema field 'metadata' to model field 'meta_data'
-        model_config = {
-            "fields": {
-                "metadata": {"alias": "meta_data"}
-            }
+        json_schema_extra={
+            "metadata": {"alias": "meta_data"}
         }
+    )
 
 
 class MetricsFilterParams(BaseModel):
@@ -163,8 +157,7 @@ class MetricsFilterParams(BaseModel):
     end_date: Optional[datetime] = Field(None, description="Filter until this date")
     period: Optional[AggregationPeriod] = Field(None, description="Aggregation period")
 
-    class Config:
-        use_enum_values = True
+    model_config = ConfigDict(use_enum_values=True)
 
 
 class MetricsSummary(BaseModel):
