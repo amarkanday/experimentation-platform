@@ -1,6 +1,6 @@
 from typing import Generator, Optional, Union, Any, Dict
 import asyncio
-from fastapi import Depends, HTTPException, status, Header, Request
+from fastapi import Depends, HTTPException, status, Header, Request, Query
 from fastapi.security import OAuth2PasswordBearer, APIKeyHeader, HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, SecretStr
@@ -361,7 +361,9 @@ def get_api_key(
 
 
 def get_experiment_by_key(
-    experiment_key: str, db: Session = Depends(get_db)
+    experiment_key: str,
+    db: Session = Depends(get_db),
+    required_status: Optional[ExperimentStatus] = None
 ) -> Experiment:
     """
     Get experiment by key or ID.
@@ -369,12 +371,13 @@ def get_experiment_by_key(
     Args:
         experiment_key (str): Experiment key or ID
         db (Session): Database session
+        required_status (Optional[ExperimentStatus]): If provided, the experiment must have this status
 
     Returns:
         Experiment: Experiment with the given key or ID
 
     Raises:
-        HTTPException: If experiment not found or inactive
+        HTTPException: If experiment not found or has incorrect status
     """
     experiment = None
 
@@ -398,8 +401,11 @@ def get_experiment_by_key(
     if not experiment:
         raise HTTPException(status_code=404, detail="Experiment not found")
 
-    # Check if experiment is active
-    if hasattr(experiment, 'status') and experiment.status != ExperimentStatus.ACTIVE:
+    # Check for required status if specified
+    if required_status is not None and hasattr(experiment, 'status') and experiment.status != required_status:
+        raise HTTPException(status_code=400, detail=f"Experiment not in {required_status.value} status")
+    # Default check for active status (only if required_status is not specified)
+    elif required_status is None and hasattr(experiment, 'status') and experiment.status != ExperimentStatus.ACTIVE:
         raise HTTPException(status_code=400, detail="Inactive experiment")
 
     cache_enabled = getattr(settings, "CACHE_ENABLED", False)
@@ -655,7 +661,15 @@ def can_delete_experiment(
     experiment: Union[Experiment, Dict[str, Any]] = Depends(get_experiment_access),
     current_user: User = Depends(get_current_user),
 ) -> bool:
-    """Check if user can delete an experiment."""
+    """
+    Check if user can delete an experiment.
+
+    WARNING: Do not use this dependency in the delete_experiment endpoint!
+    There is a design conflict where this dependency chain requires ACTIVE experiments
+    (via get_experiment_access → get_experiment_by_key) but the delete_experiment
+    endpoint requires experiments to be in DRAFT status. Use inline permission checks
+    in the delete_experiment endpoint instead.
+    """
     # Check if user has permission to delete experiments
     if not check_permission(current_user, ResourceType.EXPERIMENT, Action.DELETE):
         raise HTTPException(
@@ -677,5 +691,83 @@ def can_delete_experiment(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You must be the owner to delete this experiment",
             )
+
+    return True
+
+
+# Create a dedicated function for getting experiments for deletion
+def get_experiment_for_deletion(
+    experiment_key: str = Query(..., description="Key or ID of the experiment to delete"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+    cache_control: Dict[str, Any] = Depends(get_cache_control),
+) -> Experiment:
+    """
+    Get experiment by key or ID specifically for deletion purposes.
+    This function accepts DRAFT experiments and raises exceptions for other statuses.
+
+    Args:
+        experiment_key: The key or ID of the experiment
+        db: Database session
+        current_user: Current active user
+        cache_control: Cache control configuration
+
+    Returns:
+        Experiment: The experiment if it exists and is in DRAFT status
+
+    Raises:
+        HTTPException 404: If experiment not found
+        HTTPException 400: If experiment not in DRAFT status
+    """
+    # Try to get experiment by ID first
+    try:
+        experiment_id = UUID(experiment_key)
+        experiment = db.query(Experiment).filter(Experiment.id == experiment_id).first()
+    except (ValueError, TypeError):
+        # If not valid UUID, try by key
+        experiment = db.query(Experiment).filter(Experiment.key == experiment_key).first()
+
+    if not experiment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Experiment not found"
+        )
+
+    # Check if experiment is in DRAFT status
+    if experiment.status != ExperimentStatus.DRAFT:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Experiment not in DRAFT status"
+        )
+
+    return experiment
+
+async def can_delete_draft_experiment(
+    current_user: User = Depends(get_current_active_user),
+    experiment: Experiment = Depends(get_experiment_for_deletion),
+) -> bool:
+    """
+    Check if user can delete a draft experiment.
+    User must be either the owner of the experiment or a superuser.
+
+    Args:
+        current_user: Current active user
+        experiment: Experiment to check
+
+    Returns:
+        bool: True if user can delete the experiment
+
+    Raises:
+        HTTPException 403: If user doesn't have permission to delete this experiment
+    """
+    # Superusers can always delete
+    if current_user.is_superuser:
+        return True
+
+    # Non-superusers can only delete if they own the experiment
+    if experiment.owner_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not enough permissions to delete this experiment"
+        )
 
     return True

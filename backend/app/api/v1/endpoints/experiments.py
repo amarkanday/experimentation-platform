@@ -524,13 +524,23 @@ async def update_experiment(
                 }
             },
         },
+        status.HTTP_400_BAD_REQUEST: {
+            "description": "Invalid experiment status",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "error": {"status_code": 400, "message": "Experiment not in DRAFT status"}
+                    }
+                }
+            },
+        },
     },
 )
 async def delete_experiment(
     experiment_id: UUID = Path(..., description="The ID of the experiment to delete"),
+    experiment_key: str = Query(..., description="Key or ID of the experiment to delete (must match experiment_id)"),
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user),
-    can_delete: bool = Depends(deps.can_delete_experiment),
     cache_control: Dict[str, Any] = Depends(deps.get_cache_control),
 ) -> None:
     """
@@ -550,20 +560,39 @@ async def delete_experiment(
         None: No content, experiment was successfully deleted
 
     Raises:
+        HTTPException 400: If experiment is not in DRAFT status
         HTTPException 403: If the user doesn't have permission to delete this experiment
         HTTPException 404: If the experiment doesn't exist
     """
-    # Get experiment
+    # Get experiment by ID
     experiment = db.query(Experiment).filter(Experiment.id == experiment_id).first()
     if not experiment:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Experiment not found"
         )
 
-    # The permission checks are now handled by the deps.can_delete_experiment dependency
-    # This ensures that both checks are performed:
-    # 1. User has DELETE permission for experiments
-    # 2. User is the owner of the experiment (if not a superuser)
+    # Verify experiment_key matches experiment_id
+    if str(experiment.id) != experiment_key:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="experiment_key does not match experiment_id"
+        )
+
+    # Check permission to delete experiment
+    if not current_user.is_superuser:
+        # User must be the owner
+        if str(experiment.owner_id) != str(current_user.id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You must be the owner to delete this experiment",
+            )
+
+        # Check if user has permission to delete experiments
+        if not check_permission(current_user, ResourceType.EXPERIMENT, Action.DELETE):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=get_permission_error_message(ResourceType.EXPERIMENT, Action.DELETE),
+            )
 
     # Additional check for experiment status for non-draft experiments
     if experiment.status != ExperimentStatus.DRAFT:

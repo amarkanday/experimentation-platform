@@ -93,6 +93,19 @@
 - All critical endpoints integrate permission checks before processing requests
 - Unauthorized actions return 403 Forbidden responses with descriptive error messages
 
+### Experiment Permission Implementation Notes
+- **Important**: Do not use `can_delete_experiment` dependency function in the `delete_experiment` endpoint
+  - There is a design conflict between dependency requirements and endpoint logic:
+    - `can_delete_experiment` depends on `get_experiment_access` → `get_experiment_by_key`
+    - `get_experiment_by_key` requires experiments to be ACTIVE and returns a 400 error if they're not
+    - The `delete_experiment` endpoint requires experiments to be in DRAFT status
+  - Instead, use inline permission checks directly within the endpoint:
+    - Accept a required `experiment_key` query parameter
+    - Retrieve the experiment directly from the database
+    - Perform permission checks in the endpoint
+    - Check experiment status (must be DRAFT)
+  - This approach eliminates incompatible status requirements while maintaining proper permission checks
+
 ### Feature Flag Permissions
 - Feature flags use an ownership-based permission model where:
   - Superusers can access and modify all feature flags
