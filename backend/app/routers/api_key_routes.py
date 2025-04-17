@@ -2,7 +2,7 @@ from typing import List, Optional
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 from backend.app.api import deps
 from backend.app.models.user import User
@@ -33,8 +33,7 @@ class APIKeyResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class APIKeyList(BaseModel):
@@ -49,8 +48,7 @@ class APIKeyList(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 @router.post("/", response_model=APIKeyResponse, status_code=status.HTTP_201_CREATED)

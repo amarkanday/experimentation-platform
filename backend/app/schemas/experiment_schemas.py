@@ -1,7 +1,7 @@
 from typing import Optional, List, Dict, Any, Union
 from datetime import datetime
 from uuid import UUID
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 # Base Experiment model
@@ -40,10 +40,7 @@ class ExperimentInDB(ExperimentBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        """Pydantic configuration."""
-
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # Public experiment schema (for API responses)
@@ -62,10 +59,7 @@ class ExperimentSimple(BaseModel):
     name: str
     is_active: bool
 
-    class Config:
-        """Pydantic configuration."""
-
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # List of experiments response
