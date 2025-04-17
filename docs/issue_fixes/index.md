@@ -4,7 +4,7 @@ This directory contains documentation for various issues and their fixes.
 
 ## Core System Issues
 
-- [FastAPI Configuration Issues](FastAPI_Config_Issues.md)
+- [FastAPI Configuration Issues](FastAPI_Config_Issues.md): Resolved configuration issues with FastAPI application.
 - [RBAC Implementation Plan](rbac_implementation_plan.md)
 - [Feature Flag Permission Integration](feature_flag_permission_integration.md)
 - [Pydantic V2 Compatibility](pydantic_v2_compatibility.md)
@@ -13,13 +13,14 @@ This directory contains documentation for various issues and their fixes.
 
 ## Testing Issues
 
-- [Experiment Model Test Fix](experiment_model_test_fix.md)
+- [Experiment Model Test Fix](experiment_model_test_fix.md): Fixed validation errors in experiment model tests.
 - [Experiment Testing](experiment_testing.md)
 - [Feature Flag Testing](feature_flag_testing.md)
 - [User API Test Fixes](user_api_test_fixes.md)
 - [Tracking and Experiments Test Fixes](tracking_and_experiments_test_fixes.md)
 - [Tracking Validation Fixes](tracking_validation_fixes.md)
 - [Feature Flag Update Fix](feature_flag_update_fix.md)
+- [Safety Endpoint Testing](safety_endpoint_testing.md): Fixed schema validation issues in safety monitoring API tests.
 
 ## Logging and Monitoring
 

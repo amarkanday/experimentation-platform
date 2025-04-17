@@ -25,6 +25,11 @@ config = context.config
 
 # Get schema from environment variable
 schema = os.environ.get("POSTGRES_SCHEMA", "experimentation")
+db_name = os.environ.get("POSTGRES_DB", "experimentation")
+
+# Override sqlalchemy.url with environment variables
+postgres_url = f"postgresql://postgres:postgres@localhost:5432/{db_name}"
+config.set_main_option("sqlalchemy.url", postgres_url)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.

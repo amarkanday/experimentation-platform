@@ -19,6 +19,7 @@ from backend.app.api.v1.endpoints import (
     results,
     rollout_schedules,
     metrics,
+    safety,
 )
 
 # Import the sample size calculator router
@@ -49,6 +50,9 @@ api_router_v1.include_router(
 )
 api_router_v1.include_router(
     metrics.router, prefix="/metrics", tags=["Metrics"]
+)
+api_router_v1.include_router(
+    safety.router, prefix="/safety", tags=["Safety"]
 )
 
 # Add new utility endpoints
@@ -107,5 +111,9 @@ tags_metadata = [
     {
         "name": "Metrics",
         "description": "Operations for retrieving and analyzing feature flag metrics and performance data",
+    },
+    {
+        "name": "Safety",
+        "description": "Operations for monitoring feature flag safety and managing rollbacks",
     },
 ]

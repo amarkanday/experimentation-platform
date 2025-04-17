@@ -18,6 +18,23 @@
 - Always include schema in table definitions
 - Watch for duplicate relationship definitions
 
+## Database Migrations
+- Alembic is used for database schema migrations
+- Migration files are located in `backend/app/db/migrations/versions/`
+- When creating new migrations:
+  - Use `alembic revision --autogenerate -m "description"` to generate migration files
+  - Check the generated file for accuracy, especially for complex changes
+  - Verify that `down_revision` points to the correct previous migration ID
+  - Always use revision IDs, not migration names, in the `down_revision` field
+- Running migrations:
+  - Use `python -m alembic -c app/db/alembic.ini upgrade head` to apply migrations
+  - Use `python -m alembic -c app/db/alembic.ini history` to view migration history
+  - Set environment variables properly: `POSTGRES_DB=experimentation POSTGRES_SCHEMA=experimentation`
+- Troubleshooting:
+  - For "multiple heads" errors, create a merge migration with `alembic merge -m "merge heads" revision1 revision2`
+  - For database/migration mismatches, use `alembic stamp heads` to mark the current state
+  - Always verify migration chain integrity before deploying
+
 ## Common Issues
 - Database connections must use `localhost` on macOS
 - Clear caches when tests fail unexpectedly
@@ -425,6 +442,37 @@ Safety endpoints use different authentication dependencies based on their sensit
    - Checks `check_permission(current_user, ResourceType.FEATURE_FLAG, Action.UPDATE)`
    - Example: `rollback_feature_flag` endpoint
 
+### Database Schema
+
+The safety monitoring system uses three main tables:
+
+1. **safety_settings**: Global safety configuration
+   - `id`: UUID primary key
+   - `created_at`, `updated_at`: Timestamps
+   - `enable_automatic_rollbacks`: Boolean flag to enable/disable automatic rollbacks
+   - `default_metrics`: JSONB field containing default metric thresholds
+
+2. **feature_flag_safety_configs**: Per-feature flag safety configuration
+   - `id`: UUID primary key
+   - `created_at`, `updated_at`: Timestamps
+   - `feature_flag_id`: Foreign key to feature_flags table
+   - `enabled`: Boolean flag to enable/disable safety monitoring
+   - `metrics`: JSONB field containing metric thresholds specific to this feature flag
+   - `rollback_percentage`: Default percentage to roll back to (default: 0)
+
+3. **safety_rollback_records**: History of safety-triggered rollbacks
+   - `id`: UUID primary key
+   - `created_at`, `updated_at`: Timestamps
+   - `feature_flag_id`: Foreign key to feature_flags table
+   - `trigger_type`: Type of rollback trigger (error_rate, latency, manual, etc.)
+   - `trigger_reason`: Text description of the rollback reason
+   - `previous_percentage`: Rollout percentage before rollback
+   - `target_percentage`: Rollout percentage after rollback
+   - `success`: Whether the rollback was successful
+   - `executed_by_user_id`: UUID of the user who triggered the rollback (null for automatic)
+
+The database migration for these tables is in `backend/app/db/migrations/versions/create_safety_tables.py` (revision ID: 9734af8b92e1).
+
 ### Testing Safety APIs
 
 When writing tests for safety endpoints:
@@ -459,3 +507,22 @@ When writing tests for safety endpoints:
    - 403 Forbidden when permission is denied
    - 404 Not Found when resources don't exist
    - 500 Internal Server Error when service throws unexpected exceptions
+
+### Implementation Details
+
+1. **SafetyService**: The core service implementing safety logic in `backend/app/services/safety_service.py`
+   - `check_feature_flag_safety`: Evaluates metrics against thresholds
+   - `rollback_feature_flag`: Executes feature flag rollback
+   - `get_safety_settings`: Retrieves global settings
+   - `create_or_update_safety_settings`: Updates global settings
+
+2. **Safety Schemas**: Located in `backend/app/schemas/safety.py`
+   - `HealthStatus`: Enum with values HEALTHY, WARNING, CRITICAL, UNKNOWN
+   - `MetricThreshold`: Defines warning and critical thresholds
+   - Various request/response schemas for settings, configs, and safety checks
+
+3. **Rollback Mechanism**:
+   - Safety monitoring can trigger automatic rollbacks when metrics exceed thresholds
+   - Rollbacks reduce the feature flag's rollout percentage (typically to 0%)
+   - All rollbacks are logged with detailed information about the trigger
+   - Manual rollbacks can be performed by superusers through the API

@@ -85,6 +85,12 @@ class FeatureFlag(Base, BaseModel):
         back_populates="feature_flag",
         cascade="all, delete-orphan"
     )
+    safety_config = relationship(
+        "FeatureFlagSafetyConfig",
+        back_populates="feature_flag",
+        cascade="all, delete-orphan",
+        uselist=False  # One-to-one relationship
+    )
 
     @declared_attr
     def __table_args__(cls):
