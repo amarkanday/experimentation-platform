@@ -23,6 +23,42 @@
 - Clear caches when tests fail unexpectedly
 - Check for duplicate relationship definitions
 
+## Metrics Model Import Standards
+
+### Issue Summary
+- Inconsistent import paths for metrics models (especially `RawMetric`) cause Python to treat them as distinct classes
+- This results in:
+  - Memory duplication
+  - SQLAlchemy "Class is not mapped" errors
+  - Type checking failures
+  - Unexpected behavior during runtime
+
+### Root Causes
+- Mixed import styles: `from app.models.metrics...` vs `from backend.app.models.metrics...`
+- Re-exports of classes in `__init__.py` files creating multiple import paths
+- Legacy references to deprecated models like `FlagEvaluation` and `RuleMatch`
+
+### Solution & Prevention
+1. **Standardized Import Paths**:
+   - Always use fully qualified imports: `from backend.app.models.metrics.metric import RawMetric, MetricType`
+   - Never use relative imports like `from app.models.metrics...`
+
+2. **Avoid Re-exports**:
+   - Don't re-export classes in `__init__.py` files
+   - Import directly from the defining module
+
+3. **Testing**:
+   - Use the `test_metrics_imports.py` file to verify consistency
+   - Add similar tests when introducing new models
+
+4. **Legacy Support**:
+   - Use the compatibility layer in `compat.py` for transition
+   - Gradually migrate old code to new patterns
+
+### Automatic Verification
+- Run `python standardize_metrics_imports.py --check` to detect inconsistencies
+- Run `python -m pytest backend/tests/unit/metrics/test_metrics_imports.py` to verify imports
+
 ## Async
 - Feature flag and report-related dependencies are asynchronous (e.g., `get_feature_flag_access`, `can_create_feature_flag`, `get_report_access`)
 - Experiment-related dependencies are synchronous (e.g., `get_experiment_access`, `can_create_experiment`)
