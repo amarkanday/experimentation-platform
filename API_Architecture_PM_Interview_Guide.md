@@ -584,6 +584,208 @@ const enabled = await platform.check('feature', {userId: '123'});
 - **GraphQL support**: Flexible data querying
 - **SDK ecosystem**: 8 languages vs. competitor 3"
 
+## Testing Strategy, Collaboration, Definition of Done, and Acceptance Criteria
+
+### Testing Strategy (shift-left to production)
+
+1. Spec and Schema Validation (Shift-left)
+- OpenAPI spec linting and consistency checks during PRs (style, versioning, errors, pagination).
+- Pydantic schema validation and request/response validation in FastAPI.
+- Backward-compatibility checks on public endpoints before merges.
+
+2. Automated Test Pyramid
+- Unit tests: services, rules engines, and utilities (`backend/app/services`, `backend/app/core`).
+- Integration tests: endpoint + DB/cache path using seeded data (`backend/tests/unit/api` and `backend/tests/unit/models`).
+- Contract tests: provider verifies consumer expectations for SDKs and webhooks.
+- End-to-end smoke: critical user journeys (auth → create experiment → start → evaluate → record events → results).
+- Performance tests: k6/Gatling for p95/p99, throughput, and soak; budgets by domain (evaluation <10ms p95; management <100ms p95; analytics <1s).
+- Resiliency tests: retry/backoff, circuit breaker behavior, cache fallback, failure injection for external deps.
+- Security tests: authZ matrix by role, scope enforcement, input fuzzing, secrets scanning.
+
+3. Data and Migration Testing
+- Alembic migration validity and downgrade paths are verified in CI (see `backend/tests/models/test_alembic_migration.py`).
+- Referential integrity and data backfill jobs tested with sample fixtures.
+
+4. CI/CD Quality Gates
+- All tests green; coverage threshold met (e.g., 80%+ for core services).
+- Linting/static analysis pass; no critical vulnerabilities in dependency scans.
+- Spec compatibility and deprecation checks pass; changelog updated when required.
+- Canary smoke tests run post-deploy; automatic rollback on SLO breach.
+
+5. Environments and Data
+- Sandbox/dev with seeded datasets for rapid local validation.
+- Staging mirrors prod configs for realistic performance baselines.
+- Deterministic fixtures for reproducible test runs.
+
+### How I Worked with Developers
+
+- Planning and Discovery
+  - Joint backlog grooming translating PRD into epics/stories with NFRs and measurable outcomes.
+  - Architecture/design reviews with clear decision logs and tradeoffs.
+
+- API Design and Governance
+  - Lightweight RFCs for new resources or breaking changes; async review within 48 hours.
+  - Style guide enforcement via automated linters and a rotating API review board.
+
+- Delivery Rituals
+  - Daily async updates; weekly demo/QA; office hours for integration teams.
+  - Pairing on complex flows (auth, caching, schedulers) and incident retros with action items.
+
+- Developer Experience
+  - Provide endpoint examples, Postman collections, and SDK stubs aligned to OpenAPI.
+  - Ensure observability scaffolding (request IDs, metrics, logs) is included from day one.
+
+### Definition of Done (DoD)
+
+- Functionality
+  - Endpoint behavior matches the API design doc and OpenAPI spec; examples added/updated.
+  - Idempotency, pagination, filtering, and stable error codes implemented where applicable.
+
+- Quality and Performance
+  - Unit/integration/contract tests added; all pass in CI; coverage threshold met.
+  - Performance budgets met (per-endpoint p95) in staging; no regressions against baseline.
+
+- Security and Compliance
+  - AuthN/AuthZ checks and role scopes enforced; audit logs emitted for sensitive actions.
+  - PII handling verified (masking/encryption) and input validation in place.
+
+- Observability and Operations
+  - Structured logs, metrics, and traces wired; dashboards and alerts updated if needed.
+  - Runbooks and on-call notes updated; feature flags and rate limits configured.
+
+- Documentation and Developer Experience
+  - API reference + how-to guide updated; SDKs regenerated/updated; changelog entry added.
+  - Deprecation or migration notes included when relevant.
+
+### Acceptance Criteria (examples)
+
+1. Feature Flag Evaluation
+- Given a valid API key and existing flag, when the client calls `GET /api/v1/feature-flags/{key}/evaluate?user_id={id}` then:
+  - Response returns in <10ms p95 on staging with warmed cache.
+  - Body includes `enabled` and `variant`; assignments are sticky for the same `user_id`.
+  - On cache miss, system falls back to Redis → DB and warms caches.
+  - On rate limit breach, returns 429 with `Retry-After` and correlation `X-Request-ID` header.
+
+2. Experiment Creation
+- Given an authenticated user with EXPERIMENTER role, when posting valid payload to `/api/v1/experiments` then:
+  - 201 with created resource; invalid payload returns 400 with structured error and doc link.
+  - Audit log entry recorded with user, action, resource, and request metadata.
+  - Related caches invalidated (user_experiments, experiment lists) within the same transaction.
+
+3. Access Control
+- Given a VIEWER role, write operations (create/update/delete) on experiments return 403 with `PERMISSION_DENIED` code.
+- Role changes propagate within 5 minutes due to permission cache TTL.
+
+4. Migrations
+- Applying the Alembic migration against a copy of prod schema succeeds and is reversible.
+- No p95 regression >10% on impacted endpoints after deployment.
+
+5. Documentation and SDKs
+- OpenAPI spec updated; examples present; Postman collection updated.
+- JS and Python SDK methods generated/updated with usage snippets.
+
+## Interview Q&A Appendix
+
+### Common Follow-up Questions (with succinct answers)
+
+- Why dual authentication (OAuth2/JWT + API Keys)?
+  - Humans need rich permissions and auditability → OAuth2/OIDC via Cognito with JWTs and RBAC. High-throughput app calls need ultra-low latency → scoped API keys with per-key rate limits. Implemented in `backend/app/api/deps.py` and enforced by `backend/app/core/permissions.py`.
+
+- How do you achieve sub-10ms flag evaluation?
+  - Three-tier caching (in-memory → Redis → DB), precompiled targeting rules, minimized I/O, and a serverless path (Lambda + DynamoDB) for horizontal scale. See "Performance Considerations" and Lambda under `backend/lambda/feature_flag_evaluation`.
+
+- What is your error strategy and developer ergonomics?
+  - Standard Problem+JSON with stable codes, actionable messages, documentation links, and `X-Request-ID` correlation. Global handlers and error middleware ensure consistency.
+
+- How do you manage breaking changes and versioning?
+  - `/api/beta` for early adopters, `/api/v1` for stability, `/api/v2` for evolution. Deprecation via headers, 6–12 month windows, migration guides, and usage monitoring. Compat checks run in CI.
+
+- How is RBAC enforced across domains?
+  - Resource/Action matrices with hierarchical checks (superuser → owner → role). Permission caching in Redis with short TTL. Core logic in `backend/app/core/permissions.py`.
+
+- Rate limiting and idempotency?
+  - Per-tenant and per-key limits at the edge with clear 429 semantics and `Retry-After`. Idempotency keys for mutating endpoints to ensure safe retries.
+
+- Testing strategy highlights?
+  - Shift-left spec validation, unit/integration/contract tests, E2E smoke, k6/Gatling performance budgets, resiliency and security tests, and migration verification in CI.
+
+- Definition of Done?
+  - Spec parity and examples; tests + coverage thresholds; performance budgets met; AuthN/Z and audit logging; observability wired; docs/SDKs/changelog updated; runbooks ready.
+
+### Additional Interview Questions You Can Expect
+
+- How do you trade off performance versus consistency in evaluation vs. management paths?
+- Describe your API governance process and how you enforce standards at scale.
+- What specific steps reduce developer time-to-first-call below 30 minutes?
+- How does the system degrade gracefully during dependency failures?
+- Which KPIs tie API performance to business outcomes, and how do you act on them?
+- How do you keep security strong without harming developer experience?
+- Outline your rollout plan (alpha → beta → GA) and deprecation communications.
+
+## Additional Topics for Comprehensive API PM Preparation
+
+### Developer Portal and Self-Serve
+- Key issuance/rotation, per-key analytics, quota management, and self-serve upgrades.
+- Try-it console, Postman collections, sample apps, onboarding checklists.
+- Tenant-aware dashboards and request explorer for debugging.
+
+### Monetization and Metering
+- Tier/SKU design mapped to capabilities and SLAs; free/growth/enterprise guardrails.
+- Accurate metering pipelines, reconciliation, anti-fraud/leak detection, grace limits.
+- Billing integrations, usage forecasts, and cost transparency for customers.
+
+### Partner Ecosystem and GTM
+- Partner onboarding playbooks, certification, and sandbox SLAs.
+- Support tiers and escalation matrix; co-marketing and reference integrations.
+
+### API Portfolio Governance
+- Central API catalog, quality scorecards, lifecycle KPIs, ownership model.
+- Automated compat checks (spec diffs), RFC/waiver process, and deprecation policy.
+
+### Privacy and Data Governance
+- Data residency/sovereignty options; DPIA/ROPA/DSAR operational playbooks.
+- Classification, retention schedules, redaction/masking, and audit readiness.
+
+### Abuse Prevention and Threat Modeling
+- WAF policies, bot detection, DDoS protections, anomaly detection.
+- Per-tenant throttles/quotas, key rotation policy, honey endpoints for abuse intel.
+
+### Multi-tenant Isolation
+- Tenant-scoped encryption keys, partitioning strategies, noisy-neighbor controls.
+- Per-tenant rate limits and budget protections; blast-radius reduction patterns.
+
+### Edge and Global Strategy
+- Edge evaluation/workers, geo-routing, cache warming, cold-start mitigation.
+- Region expansion plan, POP placement analysis, and latency SLAs by geo.
+
+### Webhooks and Eventing Robustness
+- Retries with backoff, idempotency, signatures/rotation, replay protection.
+- Webhook versioning, dead-letter queues, and delivery dashboards.
+
+### Compatibility and Change Tooling
+- openapi-diff in CI, consumer-driven contracts, canary releases with shadow traffic.
+- Deprecation headers, migration guides, feature flags for behavior toggles.
+
+### FinOps and Capacity Planning
+- Per-endpoint cost budgets, autoscaling guardrails, cost dashboards and alerts.
+- Load/soak test budgets and cost anomaly detection with action thresholds.
+
+### Incident Management and Communications
+- Runbooks, status page policy, customer comms templates, and postmortem SOPs.
+- Paging rotations, error budget policies, and rollback automation.
+
+### Docs Accessibility and Localization
+- A11y standards, localized docs, inclusive language, searchable/interactive tutorials.
+- Docs telemetry for gaps; rapid iteration workflow with engineering.
+
+### SDK Strategy and Quality
+- Language coverage priorities, semver guarantees, offline behavior, telemetry opt-in.
+- Reference apps, smoke tests per SDK, and auto-generated examples.
+
+### Customer-Facing Observability
+- Tenant dashboards for latency, errors, quotas; self-serve log/request explorer.
+- Webhook replay UI and usage analytics to correlate with product outcomes.
+
 ## Closing - Business Impact & Lessons Learned (2 minutes)
 
 ### Key Business Outcomes from API Strategy
