@@ -1,31 +1,18 @@
-# Core dependencies
-fastapi>=0.68.0
-uvicorn>=0.15.0
-starlette>=0.14.2
-pydantic>=1.8.2
+# Experimentation Platform Requirements
+# This project uses a split requirements structure for better dependency management
+#
+# Install requirements based on your environment:
+#
+# Development:
+#   pip install -r requirements/dev.txt
+#
+# Production:
+#   pip install -r requirements/prod.txt
+#
+# Testing:
+#   pip install -r requirements/test.txt
+#
+# Base only:
+#   pip install -r requirements/base.txt
 
-# Logging dependencies
-python-json-logger>=2.0.7
-watchtower>=3.0.1
-boto3>=1.26.137
-psutil>=5.9.5
-
-# Testing dependencies
-pytest>=7.3.1
-pytest-asyncio>=0.21.1
-pytest-cov>=4.1.0
-
-# Database dependencies
-sqlalchemy>=1.4.23
-alembic>=1.7.1
-psycopg2-binary>=2.9.1
-
-# Security dependencies
-python-jose[cryptography]>=3.3.0
-passlib[bcrypt]>=1.7.4
-python-multipart>=0.0.5
-
-# Utilities
-python-dotenv>=0.19.0
-requests>=2.26.0
-aiohttp>=3.8.1
+-r requirements/base.txt

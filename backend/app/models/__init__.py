@@ -36,6 +36,7 @@ from .metrics.metric import (
     MetricType as MetricsMetricType,
     AggregationPeriod,
 )
+from .audit_log import AuditLog, ActionType, EntityType
 
 # Explicitly list all models that should be part of the base metadata
 __all__ = [
@@ -72,6 +73,9 @@ __all__ = [
     "ErrorLog",
     "MetricsMetricType",
     "AggregationPeriod",
+    "AuditLog",
+    "ActionType",
+    "EntityType",
 ]
 
 # Remove or comment out any premature configuration

@@ -4,8 +4,13 @@ __pycache__/
 *$py.class
 .pytest_cache/
 .coverage
+coverage.xml
+htmlcov/
 venv/
 .env
+.env.local
+*.egg-info/
+*.log
 
 # JavaScript
 node_modules/
@@ -13,6 +18,7 @@ node_modules/
 dist/
 build/
 coverage/
+out/
 
 # Infrastructure
 cdk.out/
@@ -23,3 +29,24 @@ cdk.out/
 .idea/
 *.swp
 *.swo
+.cursor/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*~
+.mypy_cache/
+
+# Test artifacts
+test.log
+app.log
+*.coverage
+
+# Note: Keep backend/__init__.py and backend/app/**/__init__.py 
+# Only ignore root-level __init__.py if accidentally created

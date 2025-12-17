@@ -32,6 +32,9 @@ from backend.app.schemas.feature_flag import (
     FeatureFlagListResponse,
     FeatureFlagReadExtended,
 )
+from backend.app.schemas.audit_log import ToggleRequest, ToggleResponse
+from backend.app.models.audit_log import ActionType, EntityType
+from backend.app.services.audit_service import AuditService
 from backend.app.services.feature_flag_service import FeatureFlagService
 from backend.app.core import security
 from backend.app.core.config import settings
@@ -763,3 +766,297 @@ async def get_user_flags(
     flags = feature_flag_service.get_user_flags(user_id, context)
 
     return flags
+
+
+@router.post(
+    "/{flag_id}/toggle",
+    response_model=ToggleResponse,
+    summary="Toggle feature flag",
+    response_description="Returns the toggled feature flag with audit log ID",
+)
+async def toggle_feature_flag(
+    flag_id: UUID = Path(..., description="The ID of the feature flag to toggle"),
+    toggle_request: ToggleRequest = Body(..., description="Toggle request with optional reason"),
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    cache_control: Dict[str, Any] = Depends(deps.get_cache_control),
+) -> ToggleResponse:
+    """
+    Toggle a feature flag between enabled and disabled states.
+
+    This endpoint provides a unified way to toggle feature flags, automatically
+    determining whether to activate or deactivate based on the current status.
+
+    The toggle operation includes:
+    - Status change (ACTIVE ↔ INACTIVE)
+    - Complete audit logging with user information and optional reason
+    - Cache invalidation
+    - Response with new status and audit log ID
+
+    **Authentication**: Requires valid user authentication.
+    **Permissions**: User must own the feature flag or be a superuser.
+
+    Returns:
+        ToggleResponse: Updated feature flag details with audit log ID
+
+    Raises:
+        HTTPException 403: If user doesn't have permission to toggle this feature flag
+        HTTPException 404: If feature flag doesn't exist
+        HTTPException 500: If toggle operation fails
+    """
+    # Get feature flag
+    flag = db.query(FeatureFlag).filter(FeatureFlag.id == flag_id).first()
+    if not flag:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Feature flag not found"
+        )
+
+    # Check access permission
+    if not current_user.is_superuser and flag.owner_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not enough permissions to toggle this feature flag",
+        )
+
+    try:
+        # Determine new status based on current status
+        old_status = flag.status
+        if flag.status == FeatureFlagStatus.ACTIVE.value:
+            new_status = FeatureFlagStatus.INACTIVE.value
+            action_type = ActionType.TOGGLE_DISABLE
+        else:
+            new_status = FeatureFlagStatus.ACTIVE.value
+            action_type = ActionType.TOGGLE_ENABLE
+
+        # Update feature flag status
+        flag.status = new_status
+        db.commit()
+        db.refresh(flag)
+
+        # Log the toggle operation
+        audit_log_id = await AuditService.log_action(
+            db=db,
+            user_id=current_user.id,
+            user_email=current_user.email,
+            action_type=action_type,
+            entity_type=EntityType.FEATURE_FLAG,
+            entity_id=flag.id,
+            entity_name=flag.name,
+            old_value=old_status,
+            new_value=new_status,
+            reason=toggle_request.reason,
+        )
+
+        # Invalidate cache if enabled
+        if cache_control.get("enabled") and cache_control.get("redis"):
+            # Delete specific feature flag cache
+            flag_cache_key = f"feature_flag:{flag_id}"
+            cache_control.get("redis").delete(flag_cache_key)
+
+            # Delete feature flag list caches
+            pattern = f"feature_flags:*"
+            for key in cache_control.get("redis").scan_iter(match=pattern):
+                cache_control.get("redis").delete(key)
+
+        return ToggleResponse(
+            id=flag.id,
+            name=flag.name,
+            key=flag.key,
+            status=new_status,
+            updated_at=flag.updated_at,
+            audit_log_id=audit_log_id,
+        )
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to toggle feature flag: {str(e)}",
+        )
+
+
+@router.post(
+    "/{flag_id}/enable",
+    response_model=ToggleResponse,
+    summary="Enable feature flag",
+    response_description="Returns the enabled feature flag with audit log ID",
+)
+async def enable_feature_flag(
+    flag_id: UUID = Path(..., description="The ID of the feature flag to enable"),
+    toggle_request: ToggleRequest = Body(..., description="Enable request with optional reason"),
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    cache_control: Dict[str, Any] = Depends(deps.get_cache_control),
+) -> ToggleResponse:
+    """
+    Enable a feature flag (set to ACTIVE status).
+
+    This endpoint explicitly enables a feature flag, regardless of current status.
+    Includes complete audit logging with user information and optional reason.
+
+    **Authentication**: Requires valid user authentication.
+    **Permissions**: User must own the feature flag or be a superuser.
+
+    Returns:
+        ToggleResponse: Updated feature flag details with audit log ID
+
+    Raises:
+        HTTPException 403: If user doesn't have permission to enable this feature flag
+        HTTPException 404: If feature flag doesn't exist
+        HTTPException 500: If enable operation fails
+    """
+    # Get feature flag
+    flag = db.query(FeatureFlag).filter(FeatureFlag.id == flag_id).first()
+    if not flag:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Feature flag not found"
+        )
+
+    # Check access permission
+    if not current_user.is_superuser and flag.owner_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not enough permissions to enable this feature flag",
+        )
+
+    try:
+        old_status = flag.status
+        new_status = FeatureFlagStatus.ACTIVE.value
+
+        # Update feature flag status
+        flag.status = new_status
+        db.commit()
+        db.refresh(flag)
+
+        # Log the enable operation
+        audit_log_id = await AuditService.log_action(
+            db=db,
+            user_id=current_user.id,
+            user_email=current_user.email,
+            action_type=ActionType.TOGGLE_ENABLE,
+            entity_type=EntityType.FEATURE_FLAG,
+            entity_id=flag.id,
+            entity_name=flag.name,
+            old_value=old_status,
+            new_value=new_status,
+            reason=toggle_request.reason,
+        )
+
+        # Invalidate cache if enabled
+        if cache_control.get("enabled") and cache_control.get("redis"):
+            flag_cache_key = f"feature_flag:{flag_id}"
+            cache_control.get("redis").delete(flag_cache_key)
+            pattern = f"feature_flags:*"
+            for key in cache_control.get("redis").scan_iter(match=pattern):
+                cache_control.get("redis").delete(key)
+
+        return ToggleResponse(
+            id=flag.id,
+            name=flag.name,
+            key=flag.key,
+            status=new_status,
+            updated_at=flag.updated_at,
+            audit_log_id=audit_log_id,
+        )
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to enable feature flag: {str(e)}",
+        )
+
+
+@router.post(
+    "/{flag_id}/disable",
+    response_model=ToggleResponse,
+    summary="Disable feature flag",
+    response_description="Returns the disabled feature flag with audit log ID",
+)
+async def disable_feature_flag(
+    flag_id: UUID = Path(..., description="The ID of the feature flag to disable"),
+    toggle_request: ToggleRequest = Body(..., description="Disable request with optional reason"),
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    cache_control: Dict[str, Any] = Depends(deps.get_cache_control),
+) -> ToggleResponse:
+    """
+    Disable a feature flag (set to INACTIVE status).
+
+    This endpoint explicitly disables a feature flag, regardless of current status.
+    Includes complete audit logging with user information and optional reason.
+
+    **Authentication**: Requires valid user authentication.
+    **Permissions**: User must own the feature flag or be a superuser.
+
+    Returns:
+        ToggleResponse: Updated feature flag details with audit log ID
+
+    Raises:
+        HTTPException 403: If user doesn't have permission to disable this feature flag
+        HTTPException 404: If feature flag doesn't exist
+        HTTPException 500: If disable operation fails
+    """
+    # Get feature flag
+    flag = db.query(FeatureFlag).filter(FeatureFlag.id == flag_id).first()
+    if not flag:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Feature flag not found"
+        )
+
+    # Check access permission
+    if not current_user.is_superuser and flag.owner_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not enough permissions to disable this feature flag",
+        )
+
+    try:
+        old_status = flag.status
+        new_status = FeatureFlagStatus.INACTIVE.value
+
+        # Update feature flag status
+        flag.status = new_status
+        db.commit()
+        db.refresh(flag)
+
+        # Log the disable operation
+        audit_log_id = await AuditService.log_action(
+            db=db,
+            user_id=current_user.id,
+            user_email=current_user.email,
+            action_type=ActionType.TOGGLE_DISABLE,
+            entity_type=EntityType.FEATURE_FLAG,
+            entity_id=flag.id,
+            entity_name=flag.name,
+            old_value=old_status,
+            new_value=new_status,
+            reason=toggle_request.reason,
+        )
+
+        # Invalidate cache if enabled
+        if cache_control.get("enabled") and cache_control.get("redis"):
+            flag_cache_key = f"feature_flag:{flag_id}"
+            cache_control.get("redis").delete(flag_cache_key)
+            pattern = f"feature_flags:*"
+            for key in cache_control.get("redis").scan_iter(match=pattern):
+                cache_control.get("redis").delete(key)
+
+        return ToggleResponse(
+            id=flag.id,
+            name=flag.name,
+            key=flag.key,
+            status=new_status,
+            updated_at=flag.updated_at,
+            audit_log_id=audit_log_id,
+        )
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to disable feature flag: {str(e)}",
+        )

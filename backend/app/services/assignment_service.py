@@ -14,6 +14,8 @@ from sqlalchemy.orm import Session, joinedload
 from backend.app.models.experiment import Experiment, Variant, ExperimentStatus
 from backend.app.models.assignment import Assignment
 from backend.app.services.event_service import EventService
+from backend.app.services.rules_evaluation_service import RulesEvaluationService
+from backend.app.schemas.targeting_rule import TargetingRules
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +35,7 @@ class AssignmentService:
         """Initialize with a database session."""
         self.db = db
         self.event_service = EventService(db)
+        self.rules_evaluation_service = RulesEvaluationService()
 
     def get_assignment(
         self, user_id: str, experiment_id: Union[str, UUID]
@@ -373,6 +376,231 @@ class AssignmentService:
         )
 
         return {"assigned": assigned, "skipped": skipped, "errors": errors}
+
+    def assign_user_with_targeting(
+        self,
+        user_id: str,
+        experiment_id: Union[str, UUID],
+        user_context: Dict[str, Any],
+        track_exposure: bool = True,
+        validate_attributes: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Assign a user to an experiment variant using targeting rules.
+
+        Args:
+            user_id: ID of the user to assign
+            experiment_id: ID of the experiment
+            user_context: User context for targeting evaluation
+            track_exposure: Whether to track an exposure event
+            validate_attributes: Whether to validate user attributes
+
+        Returns:
+            Dictionary containing the assignment data and targeting info
+
+        Raises:
+            ValueError: If the experiment is not active or targeting fails
+        """
+        # Get experiment with variants
+        experiment = (
+            self.db.query(Experiment)
+            .options(joinedload(Experiment.variants))
+            .filter(Experiment.id == experiment_id)
+            .first()
+        )
+
+        if not experiment:
+            raise ValueError(f"Experiment {experiment_id} not found")
+
+        # Check experiment status
+        if experiment.status != ExperimentStatus.ACTIVE:
+            raise ValueError(
+                f"Cannot assign users to experiment with status: {experiment.status}"
+            )
+
+        # Ensure user_id is in context
+        if 'user_id' not in user_context:
+            user_context['user_id'] = user_id
+
+        # Check for existing assignment (sticky assignment)
+        existing_assignment = (
+            self.db.query(Assignment)
+            .filter(
+                Assignment.user_id == user_id, Assignment.experiment_id == experiment_id
+            )
+            .order_by(desc(Assignment.created_at))
+            .first()
+        )
+
+        if existing_assignment:
+            logger.debug(
+                f"Using existing assignment for user {user_id} in experiment {experiment_id}"
+            )
+            assignment_dict = self.get_assignment(user_id, experiment_id)
+
+            # Add targeting info
+            assignment_dict.update({
+                'targeting_matched': True,
+                'targeting_rule_id': 'existing_assignment',
+                'user_context_validated': True,
+            })
+
+            # Optionally track exposure event
+            if track_exposure:
+                self.event_service.track_exposure(
+                    user_id=user_id,
+                    experiment_id=str(experiment_id),
+                    variant_id=str(existing_assignment.variant_id),
+                    properties=user_context,
+                )
+
+            return assignment_dict
+
+        # Evaluate targeting rules if experiment has them
+        targeting_result = self._evaluate_experiment_targeting(
+            experiment, user_context, validate_attributes
+        )
+
+        if not targeting_result['eligible']:
+            # User doesn't match targeting criteria
+            logger.info(
+                f"User {user_id} not eligible for experiment {experiment_id}: {targeting_result['reason']}"
+            )
+            return {
+                'assignment': None,
+                'targeting_matched': False,
+                'targeting_rule_id': None,
+                'reason': targeting_result['reason'],
+                'user_context_validated': targeting_result.get('validation_passed', True),
+                'evaluation_metrics': targeting_result.get('metrics'),
+            }
+
+        # Determine variant assignment
+        variant_id = self._hash_user_to_variant(user_id, experiment)
+
+        # Create new assignment
+        assignment = Assignment(
+            user_id=user_id,
+            experiment_id=experiment_id,
+            variant_id=variant_id,
+        )
+
+        self.db.add(assignment)
+        self.db.commit()
+        self.db.refresh(assignment)
+
+        logger.info(
+            f"Assigned user {user_id} to variant {variant_id} in experiment {experiment_id} via targeting"
+        )
+
+        # Track exposure event if requested
+        if track_exposure:
+            # Include targeting information in exposure event
+            exposure_properties = user_context.copy()
+            exposure_properties.update({
+                'targeting_rule_id': targeting_result.get('rule_id'),
+                'targeting_matched': True,
+            })
+
+            self.event_service.track_exposure(
+                user_id=user_id,
+                experiment_id=str(experiment_id),
+                variant_id=str(variant_id),
+                properties=exposure_properties,
+            )
+
+        # Get full assignment details and add targeting info
+        assignment_dict = self.get_assignment(user_id, experiment_id)
+        assignment_dict.update({
+            'targeting_matched': True,
+            'targeting_rule_id': targeting_result.get('rule_id'),
+            'user_context_validated': targeting_result.get('validation_passed', True),
+            'evaluation_metrics': targeting_result.get('metrics'),
+        })
+
+        return assignment_dict
+
+    def _evaluate_experiment_targeting(
+        self, experiment: Experiment, user_context: Dict[str, Any], validate_attributes: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Evaluate if a user meets experiment targeting criteria.
+
+        Args:
+            experiment: The experiment model
+            user_context: User context for evaluation
+            validate_attributes: Whether to validate attributes
+
+        Returns:
+            Dictionary with targeting evaluation results
+        """
+        try:
+            # Check if experiment has targeting rules
+            if not hasattr(experiment, 'targeting_rules') or not experiment.targeting_rules:
+                # No targeting rules - allow all users
+                return {
+                    'eligible': True,
+                    'rule_id': None,
+                    'reason': 'No targeting rules defined',
+                    'validation_passed': True,
+                }
+
+            # Parse targeting rules (assuming JSON stored in database)
+            if isinstance(experiment.targeting_rules, str):
+                targeting_rules_data = json.loads(experiment.targeting_rules)
+                targeting_rules = TargetingRules(**targeting_rules_data)
+            elif isinstance(experiment.targeting_rules, dict):
+                targeting_rules = TargetingRules(**experiment.targeting_rules)
+            else:
+                # Assume it's already a TargetingRules object
+                targeting_rules = experiment.targeting_rules
+
+            # Evaluate rules with validation
+            matched_rule, metrics = self.rules_evaluation_service.evaluate_rules_with_validation(
+                targeting_rules=targeting_rules,
+                user_context=user_context,
+                validate_attributes=validate_attributes,
+                track_metrics=True,
+            )
+
+            if matched_rule:
+                return {
+                    'eligible': True,
+                    'rule_id': matched_rule.id,
+                    'reason': f"Matched targeting rule: {matched_rule.name or matched_rule.id}",
+                    'validation_passed': metrics.error is None if metrics else True,
+                    'metrics': metrics,
+                }
+            else:
+                return {
+                    'eligible': False,
+                    'rule_id': None,
+                    'reason': 'No targeting rules matched',
+                    'validation_passed': metrics.error is None if metrics else True,
+                    'metrics': metrics,
+                }
+
+        except Exception as e:
+            logger.error(f"Error evaluating experiment targeting: {str(e)}")
+            return {
+                'eligible': False,
+                'rule_id': None,
+                'reason': f'Targeting evaluation error: {str(e)}',
+                'validation_passed': False,
+            }
+
+    def get_targeting_performance_stats(self) -> Dict[str, Any]:
+        """
+        Get performance statistics for targeting evaluations.
+
+        Returns:
+            Dictionary with performance metrics
+        """
+        return self.rules_evaluation_service.get_performance_stats()
+
+    def clear_targeting_metrics(self):
+        """Clear collected targeting metrics."""
+        self.rules_evaluation_service.clear_metrics()
 
     def reassign_user(
         self,

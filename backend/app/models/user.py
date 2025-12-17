@@ -98,6 +98,7 @@ class User(Base, BaseModel):
     experiments = relationship("Experiment", back_populates="owner")
     feature_flags = relationship("FeatureFlag", back_populates="owner")
     reports = relationship("Report", back_populates="owner")
+    audit_logs = relationship("AuditLog", back_populates="user")
     api_keys = relationship("APIKey", back_populates="user", cascade="all, delete-orphan")
     segments = relationship("Segment", back_populates="owner", cascade="all, delete-orphan")
     rollout_schedules = relationship("RolloutSchedule", back_populates="owner", cascade="all, delete-orphan")

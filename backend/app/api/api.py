@@ -20,6 +20,7 @@ from backend.app.api.v1.endpoints import (
     rollout_schedules,
     metrics,
     safety,
+    audit_logs,
 )
 
 # Import the sample size calculator router
@@ -53,6 +54,9 @@ api_router_v1.include_router(
 )
 api_router_v1.include_router(
     safety.router, prefix="/safety", tags=["Safety"]
+)
+api_router_v1.include_router(
+    audit_logs.router, prefix="/audit-logs", tags=["Audit Logs"]
 )
 
 # Add new utility endpoints
@@ -115,5 +119,9 @@ tags_metadata = [
     {
         "name": "Safety",
         "description": "Operations for monitoring feature flag safety and managing rollbacks",
+    },
+    {
+        "name": "Audit Logs",
+        "description": "Operations for querying audit logs and tracking system activity",
     },
 ]

@@ -14,6 +14,330 @@ Tasks:
 - Add logging context (request ID, user ID, etc.)
 - Document logging standards and best practices
 
+## EP-001: Enhance Rules Evaluation Engine for Advanced Targeting
+
+**Priority:** High
+**Story Points:** 8
+**Sprint:** Week 3-4 (Feature Flag Management)
+**Assignee:** Backend Developer
+**Status:** Ready for Development
+
+### Description
+Enhance the existing rules evaluation engine to support advanced targeting capabilities for both feature flags and experiments. While a basic rules engine exists, it needs significant improvements for enterprise-grade targeting scenarios.
+
+### Current State Analysis
+✅ **Already Implemented:**
+- Basic rules engine in `backend/app/core/rules_engine.py`
+- Targeting rule schemas in `backend/app/schemas/targeting_rule.py`
+- Basic evaluation logic for feature flags
+- Support for logical operators (AND, OR, NOT)
+- Basic condition evaluation with multiple operators
+- Rollout percentage support with deterministic hashing
+
+❌ **Missing/Needs Enhancement:**
+- Advanced targeting scenarios (geographic, behavioral, temporal)
+- Performance optimization for high-volume evaluations
+- Caching layer for rule evaluation results
+- Integration with experiment assignment service
+- Advanced operators (regex, date ranges, array operations)
+- Rule validation and testing framework
+- Metrics and monitoring for rule evaluation performance
+
+### Acceptance Criteria
+
+#### 1. Enhanced Rule Operators
+- [ ] Implement regex pattern matching (`match_regex`)
+- [ ] Add date range operations (`before`, `after`, `between`)
+- [ ] Support array operations (`contains_all`, `contains_any`)
+- [ ] Add numeric range operations (`between` for numbers)
+- [ ] Implement case-insensitive string operations
+
+#### 2. Performance Optimization
+- [ ] Implement rule evaluation caching with Redis
+- [ ] Add rule compilation for faster evaluation
+- [ ] Optimize evaluation order based on rule complexity
+- [ ] Add evaluation metrics and monitoring
+- [ ] Support batch evaluation for multiple users
+
+#### 3. Advanced Targeting Scenarios
+- [ ] Geographic targeting (country, region, city)
+- [ ] Behavioral targeting (user actions, engagement)
+- [ ] Temporal targeting (time-based rules)
+- [ ] Device and browser targeting
+- [ ] Custom attribute targeting with validation
+
+#### 4. Integration & Testing
+- [ ] Integrate with experiment assignment service
+- [ ] Add comprehensive unit tests (95%+ coverage)
+- [ ] Create integration tests for complex rule scenarios
+- [ ] Add performance benchmarks
+- [ ] Create rule validation framework
+
+#### 5. Monitoring & Observability
+- [ ] Add evaluation latency metrics
+- [ ] Track rule match rates and performance
+- [ ] Implement evaluation error tracking
+- [ ] Add rule complexity analysis
+- [ ] Create evaluation dashboard
+
+### Technical Implementation
+
+#### Files to Modify/Create:
+1. **`backend/app/core/rules_engine.py`** - Enhance existing engine
+2. **`backend/app/schemas/targeting_rule.py`** - Add new operators
+3. **`backend/app/services/rules_evaluation_service.py`** - New service class
+4. **`backend/app/core/rule_cache.py`** - New caching layer
+5. **`backend/tests/unit/core/test_rules_engine_advanced.py`** - New tests
+
+#### Key Components:
+
+```python
+# Enhanced Rules Evaluation Service
+class RulesEvaluationService:
+    def __init__(self, cache_service: CacheService):
+        self.cache = cache_service
+        self.metrics = MetricsCollector()
+
+    async def evaluate_user_targeting(
+        self,
+        user_context: UserContext,
+        targeting_rules: TargetingRules
+    ) -> EvaluationResult:
+        # Optimized evaluation with caching
+        pass
+
+    def compile_rules(self, rules: TargetingRules) -> CompiledRules:
+        # Pre-compile rules for faster evaluation
+        pass
+```
+
+#### Performance Requirements:
+- Rule evaluation < 10ms p99 latency
+- Support 100K+ evaluations per second
+- Cache hit rate > 90% for repeated evaluations
+- Memory usage < 100MB for compiled rules
+
+### Dependencies
+- Redis caching infrastructure (already deployed)
+- Metrics collection system (already implemented)
+- Experiment assignment service (in progress)
+
+### Definition of Done
+- [ ] All acceptance criteria met
+- [ ] Unit tests pass with 95%+ coverage
+- [ ] Integration tests pass
+- [ ] Performance benchmarks meet requirements
+- [ ] Code review completed
+- [ ] Documentation updated
+- [ ] Monitoring dashboards created
+
+### Risks & Mitigation
+- **Risk:** Performance degradation with complex rules
+  - **Mitigation:** Implement rule compilation and caching
+- **Risk:** Memory usage with large rule sets
+  - **Mitigation:** Implement rule optimization and lazy loading
+- **Risk:** Complex rule debugging
+  - **Mitigation:** Add comprehensive logging and rule validation
+
+### Related Tickets
+- EP-002: Experiment Assignment Service Integration
+- EP-003: Advanced Targeting UI Components
+- EP-004: Rule Performance Monitoring Dashboard
+
+## EP-003: Advanced Targeting UI Components
+
+**Priority:** Medium
+**Story Points:** 5
+**Sprint:** Week 7-8 (Feature Flag UI & Dashboards)
+**Assignee:** Frontend Developer
+**Status:** Ready for Development
+**Dependencies:** EP-001 (Rules Evaluation Engine)
+
+### User Story
+**As a** product manager
+**I want** to create complex targeting rules through an intuitive visual interface
+**So that** I can easily configure advanced user segmentation without technical knowledge
+
+### Description
+Create a comprehensive UI component library for building and managing advanced targeting rules. This includes visual rule builders, condition editors, and targeting preview tools that integrate with the enhanced rules evaluation engine (EP-001).
+
+### Acceptance Criteria
+
+#### 1. Visual Rule Builder
+- [ ] Drag-and-drop interface for creating rule groups
+- [ ] Visual representation of logical operators (AND, OR, NOT)
+- [ ] Nested rule group support with clear visual hierarchy
+- [ ] Real-time rule validation with error highlighting
+- [ ] Rule complexity indicator and optimization suggestions
+
+#### 2. Condition Editor Components
+- [ ] Dropdown for attribute selection with autocomplete
+- [ ] Operator selector with contextual options
+- [ ] Value input components based on data type
+- [ ] Date picker for temporal conditions
+- [ ] Multi-select for array operations
+- [ ] Regex pattern builder with validation
+
+#### 3. Targeting Preview & Testing
+- [ ] Live preview of rule evaluation results
+- [ ] Test user scenarios with sample data
+- [ ] Rollout percentage calculator with user count estimates
+- [ ] Rule performance metrics display
+- [ ] Conflict detection between overlapping rules
+
+#### 4. Rule Management Interface
+- [ ] Rule library with search and filtering
+- [ ] Rule templates for common scenarios
+- [ ] Rule versioning and change tracking
+- [ ] Bulk rule operations (copy, delete, enable/disable)
+- [ ] Rule import/export functionality
+
+#### 5. Advanced Targeting Scenarios
+- [ ] Geographic targeting with map integration
+- [ ] Behavioral targeting with user journey visualization
+- [ ] Device/browser targeting with compatibility matrix
+- [ ] Custom attribute management interface
+- [ ] A/B test audience builder
+
+### Technical Implementation
+
+#### Components to Create:
+1. **`RuleBuilder.tsx`** - Main rule builder component
+2. **`ConditionEditor.tsx`** - Individual condition editor
+3. **`RuleGroupVisualizer.tsx`** - Visual rule representation
+4. **`TargetingPreview.tsx`** - Rule testing and preview
+5. **`RuleLibrary.tsx`** - Rule management interface
+6. **`GeographicTargeting.tsx`** - Map-based targeting
+7. **`BehavioralTargeting.tsx`** - User journey targeting
+
+#### Key Features:
+
+```typescript
+// Rule Builder Component
+interface RuleBuilderProps {
+  initialRules?: TargetingRules;
+  onRulesChange: (rules: TargetingRules) => void;
+  availableAttributes: UserAttribute[];
+  validationErrors?: ValidationError[];
+}
+
+// Condition Editor with Type Safety
+interface ConditionEditorProps {
+  condition: Condition;
+  availableAttributes: UserAttribute[];
+  onConditionChange: (condition: Condition) => void;
+  onDelete: () => void;
+}
+
+// Targeting Preview
+interface TargetingPreviewProps {
+  rules: TargetingRules;
+  testUsers: TestUser[];
+  onPreviewUpdate: (results: PreviewResult[]) => void;
+}
+```
+
+#### UI/UX Requirements:
+- **Responsive Design**: Works on desktop, tablet, and mobile
+- **Accessibility**: WCAG 2.1 AA compliance
+- **Performance**: < 200ms component render time
+- **User Experience**: Intuitive drag-and-drop with visual feedback
+- **Error Handling**: Clear error messages and validation
+
+### Design Specifications
+
+#### Visual Design:
+- **Color Scheme**: Consistent with platform design system
+- **Icons**: Custom icons for operators and conditions
+- **Typography**: Clear hierarchy with readable fonts
+- **Spacing**: Consistent 8px grid system
+- **Animations**: Smooth transitions for better UX
+
+#### Interaction Patterns:
+- **Drag & Drop**: Visual feedback during rule building
+- **Auto-save**: Automatic rule persistence
+- **Undo/Redo**: Full action history support
+- **Keyboard Shortcuts**: Power user efficiency
+- **Contextual Help**: Tooltips and guided tours
+
+### API Integration
+
+#### Backend Endpoints:
+- `POST /api/v1/rules/validate` - Rule validation
+- `POST /api/v1/rules/preview` - Rule preview testing
+- `GET /api/v1/attributes` - Available user attributes
+- `GET /api/v1/rules/templates` - Rule templates
+- `POST /api/v1/rules/performance` - Rule performance metrics
+
+#### Data Flow:
+```typescript
+// Rule building flow
+RuleBuilder → Validation API → Preview API → Save API
+     ↓              ↓              ↓           ↓
+Visual Feedback → Error Display → Live Preview → Persistence
+```
+
+### Testing Requirements
+
+#### Unit Tests:
+- [ ] Component rendering with various props
+- [ ] User interaction handling
+- [ ] Rule validation logic
+- [ ] Error state management
+- [ ] Accessibility compliance
+
+#### Integration Tests:
+- [ ] API integration with backend
+- [ ] Rule persistence and retrieval
+- [ ] Preview functionality
+- [ ] Performance with large rule sets
+- [ ] Cross-browser compatibility
+
+#### User Acceptance Tests:
+- [ ] Product manager can create complex rules
+- [ ] Rules work correctly in production
+- [ ] UI is intuitive for non-technical users
+- [ ] Performance meets requirements
+- [ ] Error handling is user-friendly
+
+### Performance Requirements
+- **Component Load Time**: < 500ms initial render
+- **Rule Validation**: < 100ms for complex rules
+- **Preview Generation**: < 200ms for 1000 test users
+- **Memory Usage**: < 50MB for large rule sets
+- **Bundle Size**: < 200KB for targeting components
+
+### Definition of Done
+- [ ] All acceptance criteria met
+- [ ] Unit tests pass with 90%+ coverage
+- [ ] Integration tests pass
+- [ ] User acceptance testing completed
+- [ ] Performance benchmarks met
+- [ ] Accessibility audit passed
+- [ ] Code review completed
+- [ ] Documentation updated
+- [ ] Design review approved
+
+### Risks & Mitigation
+- **Risk**: Complex UI becomes overwhelming
+  - **Mitigation**: Progressive disclosure and guided tours
+- **Risk**: Performance issues with large rule sets
+  - **Mitigation**: Virtualization and lazy loading
+- **Risk**: API integration complexity
+  - **Mitigation**: Comprehensive error handling and fallbacks
+
+### Dependencies
+- EP-001: Enhanced Rules Evaluation Engine (backend)
+- Design system components (already available)
+- User attribute schema (from backend)
+- Rule validation API (from EP-001)
+
+### Related Tickets
+- EP-001: Enhance Rules Evaluation Engine (backend)
+- EP-005: Rule Performance Monitoring Dashboard
+- EP-006: Advanced Segmentation Analytics
+- EP-007: A/B Test Audience Builder
+
 Acceptance Criteria:
 - All logs are in structured JSON format
 - Log levels are properly configured and used

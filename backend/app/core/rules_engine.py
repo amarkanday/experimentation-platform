@@ -368,6 +368,13 @@ def apply_operator(
 
         return any(item in actual_value for item in expected_value)
 
+    # Enhanced operators - delegate to evaluation service if available
+    elif operator in ['semantic_version', 'geo_distance', 'time_window', 'percentage_bucket', 'json_path', 'array_length']:
+        # For backward compatibility, these will be handled by the evaluation service
+        # Fall back to False for now if not handled by evaluation service
+        logger.warning(f"Enhanced operator {operator} requires RulesEvaluationService")
+        return False
+
     # Unknown operator
     logger.warning(f"Unknown operator: {operator}")
     return False
