@@ -1,10 +1,15 @@
-# Experimentation Platform
+# Experimently
+
+> **Modern experimentation platform for A/B testing and feature flags**
 
 A scalable, AWS-based platform for A/B testing and feature flags with real-time evaluation capabilities.
 
+**Website**: [getexperimently.com](https://getexperimently.com)
+**Contact**: hello@getexperimently.com
+
 ## Overview
 
-This platform enables teams to make data-driven decisions through robust experimentation and feature management. Built on AWS, it offers high-throughput event collection, real-time experiment assignment, and comprehensive analytics.
+Experimently enables teams to make data-driven decisions through robust experimentation and feature management. Built on AWS, it offers high-throughput event collection, real-time experiment assignment, and comprehensive analytics.
 
 Key capabilities:
 
@@ -122,9 +127,16 @@ npm run dev
 
 The application will be available at:
 
+-   Marketing Website: http://localhost:3000 (frontend)
 -   Backend API: http://localhost:8000
--   Frontend: http://localhost:3000
 -   API Documentation: http://localhost:8000/docs
+
+## Production URLs
+
+-   **Marketing**: https://getexperimently.com
+-   **App Dashboard**: https://app.getexperimently.com
+-   **API**: https://api.getexperimently.com
+-   **Documentation**: https://docs.getexperimently.com
 
 ### Running Tests
 
