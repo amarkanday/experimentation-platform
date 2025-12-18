@@ -41,12 +41,13 @@ services:
     ports:
       - "4566:4566"  # LocalStack edge port
     environment:
-      - SERVICES=dynamodb,s3,kinesis,lambda,cognito,sqs,opensearch
+      - SERVICES=dynamodb,s3,kinesis,lambda,cognito-idp,sqs,opensearch
       - DEBUG=1
-      - DATA_DIR=/tmp/localstack/data
+      - DATA_DIR=/var/lib/localstack
+      - PERSISTENCE=1
     volumes:
       - ./localstack:/docker-entrypoint-initaws.d
-      - localstack_data:/tmp/localstack
+      - localstack_data:/var/lib/localstack
 
   # PGAdmin for database management (optional)
   pgadmin:
