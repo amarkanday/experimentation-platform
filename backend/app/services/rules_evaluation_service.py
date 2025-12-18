@@ -6,6 +6,8 @@ This service provides advanced rule evaluation capabilities with:
 - Performance metrics and monitoring
 - Error tracking and logging
 - Integration with assignment service
+- Rule compilation and caching for performance
+- Batch evaluation support
 """
 
 import json
@@ -14,8 +16,8 @@ import time
 import hashlib
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional, Tuple
-from dataclasses import dataclass
-from collections import defaultdict
+from dataclasses import dataclass, field
+from collections import defaultdict, deque
 import re
 import math
 
@@ -33,6 +35,8 @@ from backend.app.core.rules_engine import (
     apply_operator as base_apply_operator,
     UserContext,
 )
+from backend.app.core.rule_compiler import RuleCompiler
+from backend.app.core.evaluation_cache import EvaluationCache
 
 logger = logging.getLogger(__name__)
 
@@ -56,15 +60,90 @@ class AttributeValidationResult:
     normalized_value: Optional[Any] = None
 
 
+@dataclass
+class EvaluationResult:
+    """Result of a rule evaluation."""
+    matched: bool
+    matched_rule_id: Optional[str] = None
+    variant: Optional[str] = None
+    error: Optional[str] = None
+    cached: bool = False
+    evaluation_time_ms: float = 0.0
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class EvaluationMetrics:
+    """Metrics collected during rule evaluation."""
+    total_evaluations: int = 0
+    cache_hits: int = 0
+    cache_misses: int = 0
+    total_errors: int = 0
+    avg_latency_ms: float = 0.0
+    p95_latency_ms: float = 0.0
+    p99_latency_ms: float = 0.0
+    latency_samples: deque = field(default_factory=lambda: deque(maxlen=1000))
+
+    def record_latency(self, latency_ms: float):
+        """Record a latency sample."""
+        self.latency_samples.append(latency_ms)
+        self._update_percentiles()
+
+    def _update_percentiles(self):
+        """Update percentile calculations."""
+        if not self.latency_samples:
+            return
+
+        sorted_samples = sorted(self.latency_samples)
+        n = len(sorted_samples)
+
+        self.avg_latency_ms = sum(sorted_samples) / n
+
+        if n > 0:
+            p95_idx = int(n * 0.95)
+            p99_idx = int(n * 0.99)
+            self.p95_latency_ms = sorted_samples[min(p95_idx, n - 1)]
+            self.p99_latency_ms = sorted_samples[min(p99_idx, n - 1)]
+
+
 class RulesEvaluationService:
     """Enhanced rules evaluation service with validation and monitoring."""
 
-    def __init__(self):
-        """Initialize the service."""
+    def __init__(
+        self,
+        cache_max_size: int = 10000,
+        cache_ttl: float = 300.0,
+        compiler_cache_size: int = 1000,
+        enable_metrics: bool = True
+    ):
+        """
+        Initialize the service.
+
+        Args:
+            cache_max_size: Maximum number of evaluation results to cache
+            cache_ttl: Time-to-live for cached results in seconds
+            compiler_cache_size: Maximum number of compiled rules to cache
+            enable_metrics: Whether to collect metrics
+        """
+        # Legacy attributes
         self.evaluation_metrics: List[RuleEvaluationMetrics] = []
         self.attribute_cache: Dict[str, Any] = {}
         self.error_counts = defaultdict(int)
         self.performance_stats = defaultdict(list)
+
+        # New caching and compilation components
+        self.evaluation_cache = EvaluationCache(
+            max_size=cache_max_size,
+            default_ttl=cache_ttl
+        )
+        self.rule_compiler = RuleCompiler(cache_max_size=compiler_cache_size)
+        self.enable_metrics = enable_metrics
+        self.metrics = EvaluationMetrics()
+
+        logger.info(
+            f"RulesEvaluationService initialized: "
+            f"cache_size={cache_max_size}, ttl={cache_ttl}s, metrics={enable_metrics}"
+        )
 
     def evaluate_rules_with_validation(
         self,
@@ -586,3 +665,214 @@ class RulesEvaluationService:
         self.error_counts.clear()
         self.performance_stats.clear()
         self.attribute_cache.clear()
+
+    def evaluate(
+        self,
+        rules: TargetingRules,
+        user_context: Dict[str, Any],
+        skip_cache: bool = False
+    ) -> EvaluationResult:
+        """
+        Evaluate targeting rules for a user with caching.
+
+        This is the simplified API that integrates caching and compilation.
+
+        Args:
+            rules: The targeting rules to evaluate
+            user_context: User context with attributes
+            skip_cache: If True, bypass cache and force evaluation
+
+        Returns:
+            EvaluationResult with matched status and rule info
+        """
+        start_time = time.time()
+
+        try:
+            # Check cache first (unless skipped)
+            if not skip_cache:
+                cached_result = self._check_cache(rules, user_context)
+                if cached_result:
+                    cached_result.evaluation_time_ms = (time.time() - start_time) * 1000
+                    if self.enable_metrics:
+                        self.metrics.total_evaluations += 1
+                        self.metrics.cache_hits += 1
+                        self.metrics.record_latency(cached_result.evaluation_time_ms)
+                    return cached_result
+
+            # Cache miss - perform evaluation
+            if self.enable_metrics:
+                self.metrics.cache_misses += 1
+
+            # Compile rules if needed
+            self._compile_rules(rules)
+
+            # Evaluate rules using existing enhanced evaluation
+            matched_rule = self._evaluate_targeting_rules_enhanced(rules, user_context)
+
+            # Build result
+            result = EvaluationResult(
+                matched=matched_rule is not None,
+                matched_rule_id=matched_rule.id if matched_rule else None,
+                cached=False,
+                evaluation_time_ms=(time.time() - start_time) * 1000
+            )
+
+            # Cache result
+            if not skip_cache and matched_rule:
+                self._cache_result(rules, user_context, result)
+
+            # Record metrics
+            if self.enable_metrics:
+                self.metrics.total_evaluations += 1
+                self.metrics.record_latency(result.evaluation_time_ms)
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Error evaluating rules: {e}", exc_info=True)
+
+            if self.enable_metrics:
+                self.metrics.total_errors += 1
+                self.metrics.total_evaluations += 1
+
+            return EvaluationResult(
+                matched=False,
+                error=str(e),
+                evaluation_time_ms=(time.time() - start_time) * 1000
+            )
+
+    def batch_evaluate(
+        self,
+        rules: TargetingRules,
+        user_contexts: List[Dict[str, Any]]
+    ) -> List[EvaluationResult]:
+        """
+        Evaluate rules for multiple users in batch.
+
+        Optimizations:
+        - Compile rules once, reuse for all evaluations
+        - Leverage cache for repeated contexts
+        - Process efficiently in single pass
+
+        Args:
+            rules: The targeting rules to evaluate
+            user_contexts: List of user contexts
+
+        Returns:
+            List of EvaluationResults in same order as input
+        """
+        # Pre-compile rules once
+        self._compile_rules(rules)
+
+        results = []
+        for user_context in user_contexts:
+            result = self.evaluate(rules, user_context)
+            results.append(result)
+
+        return results
+
+    def invalidate_rule_cache(self, rule_id: str):
+        """
+        Invalidate all cached evaluations for a specific rule.
+
+        Args:
+            rule_id: The rule ID to invalidate
+        """
+        self.evaluation_cache.invalidate_rule(rule_id)
+        logger.info(f"Invalidated cache for rule: {rule_id}")
+
+    def invalidate_user_cache(self, user_id: str):
+        """
+        Invalidate all cached evaluations for a specific user.
+
+        Args:
+            user_id: The user ID to invalidate
+        """
+        self.evaluation_cache.invalidate_user(user_id)
+        logger.info(f"Invalidated cache for user: {user_id}")
+
+    def get_metrics(self) -> EvaluationMetrics:
+        """
+        Get current evaluation metrics.
+
+        Returns:
+            EvaluationMetrics with statistics
+        """
+        return self.metrics
+
+    def reset_metrics(self):
+        """Reset metrics counters."""
+        self.metrics = EvaluationMetrics()
+        logger.info("Metrics reset")
+
+    def _check_cache(
+        self,
+        rules: TargetingRules,
+        user_context: Dict[str, Any]
+    ) -> Optional[EvaluationResult]:
+        """
+        Check cache for existing evaluation result.
+
+        Args:
+            rules: Targeting rules
+            user_context: User context
+
+        Returns:
+            Cached EvaluationResult or None
+        """
+        # Generate cache key from rules and context
+        if not rules.rules:
+            return None
+
+        rule_id = rules.rules[0].id
+        cached = self.evaluation_cache.get(rule_id, user_context)
+
+        if cached is not None:
+            return EvaluationResult(
+                matched=cached,
+                matched_rule_id=rule_id if cached else None,
+                cached=True
+            )
+
+        return None
+
+    def _cache_result(
+        self,
+        rules: TargetingRules,
+        user_context: Dict[str, Any],
+        result: EvaluationResult
+    ):
+        """
+        Cache evaluation result.
+
+        Args:
+            rules: Targeting rules
+            user_context: User context
+            result: Evaluation result to cache
+        """
+        if not rules.rules or not result.matched_rule_id:
+            return
+
+        rule_id = result.matched_rule_id
+        self.evaluation_cache.set(rule_id, user_context, result.matched)
+
+    def _compile_rules(self, rules: TargetingRules) -> List:
+        """
+        Compile targeting rules for optimized evaluation.
+
+        Args:
+            rules: Targeting rules to compile
+
+        Returns:
+            List of compiled rules
+        """
+        compiled = []
+        for rule in rules.rules:
+            try:
+                compiled_rule = self.rule_compiler.compile(rule)
+                compiled.append(compiled_rule)
+            except Exception as e:
+                logger.warning(f"Failed to compile rule {rule.id}: {e}")
+                # Continue with other rules
+
+        return compiled
