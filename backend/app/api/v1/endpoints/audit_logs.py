@@ -6,7 +6,6 @@ enabling administrators and authorized users to view the complete
 audit trail of all system actions.
 """
 
-import os
 from datetime import datetime
 from typing import Optional
 from uuid import UUID
@@ -22,13 +21,6 @@ from fastapi import (
 from sqlalchemy.orm import Session
 
 from backend.app.api import deps
-# Use dev dependencies in development mode
-if os.environ.get("ENVIRONMENT") == "development":
-    from backend.app.api import deps_dev
-    get_current_active_user = deps_dev.get_current_active_user_dev
-else:
-    get_current_active_user = deps.get_current_active_user
-
 from backend.app.models.user import User
 from backend.app.models.audit_log import ActionType, EntityType
 from backend.app.schemas.audit_log import (
@@ -96,7 +88,7 @@ router = APIRouter(
 async def list_audit_logs(
     *,
     db: Session = Depends(deps.get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(deps.get_current_active_user),
     user_id: Optional[UUID] = Query(None, description="Filter by user ID"),
     entity_type: Optional[str] = Query(None, description="Filter by entity type"),
     entity_id: Optional[UUID] = Query(None, description="Filter by entity ID"),
@@ -129,38 +121,39 @@ async def list_audit_logs(
     can_view_all = check_permission(current_user, ResourceType.USER, Action.READ)
 
     # If user doesn't have permission to view all logs, restrict to their own actions
+    # Override any user_id parameter they might have passed
     if not can_view_all and not current_user.is_superuser:
         user_id = current_user.id
 
-    try:
-        # Validate and convert enum parameters
-        entity_type_enum = None
-        if entity_type:
-            try:
-                entity_type_enum = EntityType(entity_type)
-            except ValueError:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Invalid entity type: {entity_type}",
-                )
-
-        action_type_enum = None
-        if action_type:
-            try:
-                action_type_enum = ActionType(action_type)
-            except ValueError:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Invalid action type: {action_type}",
-                )
-
-        # Validate date range
-        if from_date and to_date and to_date <= from_date:
+    # Validate and convert enum parameters
+    entity_type_enum = None
+    if entity_type:
+        try:
+            entity_type_enum = EntityType(entity_type)
+        except ValueError:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="to_date must be after from_date",
+                detail=f"Invalid entity type: {entity_type}",
             )
 
+    action_type_enum = None
+    if action_type:
+        try:
+            action_type_enum = ActionType(action_type)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid action type: {action_type}",
+            )
+
+    # Validate date range
+    if from_date and to_date and to_date <= from_date:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="to_date must be after from_date",
+        )
+
+    try:
         # Get audit logs
         audit_logs, total_count = AuditService.get_audit_logs(
             db=db,
@@ -211,7 +204,7 @@ async def list_audit_logs(
 async def get_entity_audit_history(
     *,
     db: Session = Depends(deps.get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(deps.get_current_active_user),
     entity_type: str = Path(..., description="Type of entity (feature_flag, experiment, etc.)"),
     entity_id: UUID = Path(..., description="ID of the entity"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum number of records to return"),
@@ -237,16 +230,16 @@ async def get_entity_audit_history(
             detail="Not enough permissions to view entity audit history",
         )
 
+    # Validate entity type
     try:
-        # Validate entity type
-        try:
-            entity_type_enum = EntityType(entity_type)
-        except ValueError:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid entity type: {entity_type}",
-            )
+        entity_type_enum = EntityType(entity_type)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid entity type: {entity_type}",
+        )
 
+    try:
         # Get audit logs for the entity
         audit_logs = AuditService.get_entity_audit_history(
             db=db,
@@ -258,11 +251,6 @@ async def get_entity_audit_history(
         # Convert to response models
         return [AuditLogResponse.model_validate(log) for log in audit_logs]
 
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -279,7 +267,7 @@ async def get_entity_audit_history(
 async def get_user_activity(
     *,
     db: Session = Depends(deps.get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(deps.get_current_active_user),
     user_id: UUID = Path(..., description="ID of the user"),
     from_date: Optional[datetime] = Query(None, description="Filter logs from this date"),
     to_date: Optional[datetime] = Query(None, description="Filter logs until this date"),
@@ -302,14 +290,14 @@ async def get_user_activity(
             detail="Not enough permissions to view this user's activity",
         )
 
-    try:
-        # Validate date range
-        if from_date and to_date and to_date <= from_date:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="to_date must be after from_date",
-            )
+    # Validate date range
+    if from_date and to_date and to_date <= from_date:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="to_date must be after from_date",
+        )
 
+    try:
         # Get user activity
         audit_logs = AuditService.get_user_activity(
             db=db,
@@ -322,11 +310,6 @@ async def get_user_activity(
         # Convert to response models
         return [AuditLogResponse.model_validate(log) for log in audit_logs]
 
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -343,7 +326,7 @@ async def get_user_activity(
 async def get_audit_stats(
     *,
     db: Session = Depends(deps.get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(deps.get_current_active_user),
     from_date: Optional[datetime] = Query(None, description="Filter logs from this date"),
     to_date: Optional[datetime] = Query(None, description="Filter logs until this date"),
 ) -> AuditStatsResponse:
@@ -363,14 +346,14 @@ async def get_audit_stats(
             detail="Not enough permissions to view audit statistics",
         )
 
-    try:
-        # Validate date range
-        if from_date and to_date and to_date <= from_date:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="to_date must be after from_date",
-            )
+    # Validate date range
+    if from_date and to_date and to_date <= from_date:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="to_date must be after from_date",
+        )
 
+    try:
         # Get audit statistics
         stats = AuditService.get_audit_stats(
             db=db,
@@ -380,11 +363,6 @@ async def get_audit_stats(
 
         return AuditStatsResponse.model_validate(stats)
 
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

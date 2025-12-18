@@ -15,10 +15,13 @@ from datetime import datetime, timezone, timedelta
 from uuid import uuid4
 from unittest.mock import patch, Mock, MagicMock
 
+from contextlib import contextmanager
+
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from backend.app.main import app
+from backend.app.api import deps
 from backend.app.models.audit_log import AuditLog, ActionType, EntityType
 from backend.app.models.user import User, UserRole
 from backend.app.services.audit_service import AuditService
@@ -37,6 +40,25 @@ class TestAuditLogsAPI:
             role=role,
             is_superuser=(role == UserRole.ADMIN),
         )
+
+
+    @contextmanager
+    def override_deps(self, mock_user: User, mock_db: Session):
+        """Context manager to override FastAPI dependencies."""
+        def get_mock_user():
+            return mock_user
+
+        def get_mock_db():
+            yield mock_db
+
+        app.dependency_overrides[deps.get_current_user] = get_mock_user
+        app.dependency_overrides[deps.get_current_active_user] = get_mock_user
+        app.dependency_overrides[deps.get_db] = get_mock_db
+
+        try:
+            yield
+        finally:
+            app.dependency_overrides = {}
 
     def setup_test_audit_logs(self, db_session: Session, count: int = 5):
         """Setup test audit logs for testing."""
@@ -67,17 +89,11 @@ class TestAuditLogsAPI:
 
         return user, audit_logs
 
-    @patch("backend.app.api.deps.get_current_active_user")
-    @patch("backend.app.api.deps.get_db")
-    def test_list_audit_logs_success(self, mock_get_db, mock_get_user):
+    def test_list_audit_logs_success(self):
         """Test successful audit logs listing."""
-        client = TestClient(app)
-
         # Setup mocks
         mock_db = Mock(spec=Session)
-        mock_get_db.return_value = mock_db
         mock_user = self.setup_test_user(UserRole.ADMIN)
-        mock_get_user.return_value = mock_user
 
         # Mock audit service response
         mock_audit_logs = [
@@ -99,12 +115,14 @@ class TestAuditLogsAPI:
             )
         ]
 
-        with patch.object(AuditService, 'get_audit_logs', return_value=(mock_audit_logs, 1)):
-            with patch("backend.app.core.permissions.check_permission", return_value=True):
-                response = client.get(
-                    "/api/v1/audit-logs/",
-                    headers={"Authorization": "Bearer test-token"}
-                )
+        with self.override_deps(mock_user, mock_db):
+            with patch.object(AuditService, 'get_audit_logs', return_value=(mock_audit_logs, 1)):
+                with patch("backend.app.api.v1.endpoints.audit_logs.check_permission", return_value=True):
+                    client = TestClient(app)
+                    response = client.get(
+                        "/api/v1/audit-logs/",
+                        headers={"Authorization": "Bearer test-token"}
+                    )
 
         assert response.status_code == 200
         data = response.json()
@@ -116,30 +134,27 @@ class TestAuditLogsAPI:
         assert data["total"] == 1
         assert len(data["items"]) == 1
 
-    @patch("backend.app.api.deps.get_current_active_user")
-    @patch("backend.app.api.deps.get_db")
-    def test_list_audit_logs_with_filters(self, mock_get_db, mock_get_user):
+    def test_list_audit_logs_with_filters(self):
         """Test audit logs listing with various filters."""
-        client = TestClient(app)
-
+        # Setup mocks
         mock_db = Mock(spec=Session)
-        mock_get_db.return_value = mock_db
         mock_user = self.setup_test_user(UserRole.ADMIN)
-        mock_get_user.return_value = mock_user
 
-        with patch.object(AuditService, 'get_audit_logs', return_value=([], 0)) as mock_get_logs:
-            with patch("backend.app.core.permissions.check_permission", return_value=True):
-                response = client.get(
-                    "/api/v1/audit-logs/",
-                    params={
-                        "user_id": str(uuid4()),
-                        "entity_type": "feature_flag",
-                        "action_type": "toggle_enable",
-                        "page": 2,
-                        "limit": 25,
-                    },
-                    headers={"Authorization": "Bearer test-token"}
-                )
+        with self.override_deps(mock_user, mock_db):
+            with patch.object(AuditService, 'get_audit_logs', return_value=([], 0)) as mock_get_logs:
+                with patch("backend.app.api.v1.endpoints.audit_logs.check_permission", return_value=True):
+                    client = TestClient(app)
+                    response = client.get(
+                        "/api/v1/audit-logs/",
+                        params={
+                            "user_id": str(uuid4()),
+                            "entity_type": "feature_flag",
+                            "action_type": "toggle_enable",
+                            "page": 2,
+                            "limit": 25,
+                        },
+                        headers={"Authorization": "Bearer test-token"}
+                    )
 
         assert response.status_code == 200
         # Verify the service was called with correct parameters
@@ -150,87 +165,73 @@ class TestAuditLogsAPI:
         assert call_args.kwargs['entity_type'] == EntityType.FEATURE_FLAG
         assert call_args.kwargs['action_type'] == ActionType.TOGGLE_ENABLE
 
-    @patch("backend.app.api.deps.get_current_active_user")
-    @patch("backend.app.api.deps.get_db")
-    def test_list_audit_logs_permission_restricted(self, mock_get_db, mock_get_user):
+    def test_list_audit_logs_permission_restricted(self):
         """Test that regular users can only see their own logs."""
-        client = TestClient(app)
-
+        # Setup mocks
         mock_db = Mock(spec=Session)
-        mock_get_db.return_value = mock_db
         mock_user = self.setup_test_user(UserRole.VIEWER)
-        mock_get_user.return_value = mock_user
 
-        with patch.object(AuditService, 'get_audit_logs', return_value=([], 0)) as mock_get_logs:
-            with patch("backend.app.core.permissions.check_permission", return_value=False):
-                response = client.get(
-                    "/api/v1/audit-logs/",
-                    headers={"Authorization": "Bearer test-token"}
-                )
+        with self.override_deps(mock_user, mock_db):
+            with patch.object(AuditService, 'get_audit_logs', return_value=([], 0)) as mock_get_logs:
+                with patch("backend.app.api.v1.endpoints.audit_logs.check_permission", return_value=False):
+                    client = TestClient(app)
+                    response = client.get(
+                        "/api/v1/audit-logs/",
+                        headers={"Authorization": "Bearer test-token"}
+                    )
 
         assert response.status_code == 200
         # Verify the service was called with user's ID restriction
         call_args = mock_get_logs.call_args
         assert call_args.kwargs['user_id'] == mock_user.id
 
-    @patch("backend.app.api.deps.get_current_active_user")
-    @patch("backend.app.api.deps.get_db")
-    def test_list_audit_logs_invalid_entity_type(self, mock_get_db, mock_get_user):
+    def test_list_audit_logs_invalid_entity_type(self):
         """Test error handling for invalid entity type."""
-        client = TestClient(app)
-
+        # Setup mocks
         mock_db = Mock(spec=Session)
-        mock_get_db.return_value = mock_db
         mock_user = self.setup_test_user(UserRole.ADMIN)
-        mock_get_user.return_value = mock_user
 
-        with patch("backend.app.core.permissions.check_permission", return_value=True):
-            response = client.get(
-                "/api/v1/audit-logs/",
-                params={"entity_type": "invalid_entity_type"},
-                headers={"Authorization": "Bearer test-token"}
-            )
+        with self.override_deps(mock_user, mock_db):
+            with patch("backend.app.api.v1.endpoints.audit_logs.check_permission", return_value=True):
+                client = TestClient(app)
+                response = client.get(
+                    "/api/v1/audit-logs/",
+                    params={"entity_type": "invalid_entity_type"},
+                    headers={"Authorization": "Bearer test-token"}
+                )
 
         assert response.status_code == 400
         assert "Invalid entity type" in response.json()["detail"]
 
-    @patch("backend.app.api.deps.get_current_active_user")
-    @patch("backend.app.api.deps.get_db")
-    def test_list_audit_logs_invalid_date_range(self, mock_get_db, mock_get_user):
+    def test_list_audit_logs_invalid_date_range(self):
         """Test error handling for invalid date range."""
-        client = TestClient(app)
-
+        # Setup mocks
         mock_db = Mock(spec=Session)
-        mock_get_db.return_value = mock_db
         mock_user = self.setup_test_user(UserRole.ADMIN)
-        mock_get_user.return_value = mock_user
 
         from_date = datetime.now(timezone.utc)
         to_date = from_date - timedelta(days=1)  # Invalid: to_date before from_date
 
-        with patch("backend.app.core.permissions.check_permission", return_value=True):
-            response = client.get(
-                "/api/v1/audit-logs/",
-                params={
-                    "from_date": from_date.isoformat(),
-                    "to_date": to_date.isoformat(),
-                },
-                headers={"Authorization": "Bearer test-token"}
-            )
+        with self.override_deps(mock_user, mock_db):
+            with patch("backend.app.api.v1.endpoints.audit_logs.check_permission", return_value=True):
+                client = TestClient(app)
+                response = client.get(
+                    "/api/v1/audit-logs/",
+                    params={
+                        "from_date": from_date.isoformat(),
+                        "to_date": to_date.isoformat(),
+                    },
+                    headers={"Authorization": "Bearer test-token"}
+                )
 
         assert response.status_code == 400
         assert "to_date must be after from_date" in response.json()["detail"]
 
-    @patch("backend.app.api.deps.get_current_active_user")
-    @patch("backend.app.api.deps.get_db")
-    def test_get_entity_audit_history_success(self, mock_get_db, mock_get_user):
+    def test_get_entity_audit_history_success(self):
         """Test successful entity audit history retrieval."""
-        client = TestClient(app)
-
+        # Setup mocks
         mock_db = Mock(spec=Session)
-        mock_get_db.return_value = mock_db
         mock_user = self.setup_test_user(UserRole.ADMIN)
-        mock_get_user.return_value = mock_user
 
         entity_id = uuid4()
         mock_audit_logs = [
@@ -252,50 +253,44 @@ class TestAuditLogsAPI:
             )
         ]
 
-        with patch.object(AuditService, 'get_entity_audit_history', return_value=mock_audit_logs):
-            with patch("backend.app.core.permissions.check_permission", return_value=True):
-                response = client.get(
-                    f"/api/v1/audit-logs/entity/feature_flag/{entity_id}",
-                    headers={"Authorization": "Bearer test-token"}
-                )
+        with self.override_deps(mock_user, mock_db):
+            with patch.object(AuditService, 'get_entity_audit_history', return_value=mock_audit_logs):
+                with patch("backend.app.api.v1.endpoints.audit_logs.check_permission", return_value=True):
+                    client = TestClient(app)
+                    response = client.get(
+                        f"/api/v1/audit-logs/entity/feature_flag/{entity_id}",
+                        headers={"Authorization": "Bearer test-token"}
+                    )
 
         assert response.status_code == 200
         data = response.json()
         assert isinstance(data, list)
         assert len(data) == 1
 
-    @patch("backend.app.api.deps.get_current_active_user")
-    @patch("backend.app.api.deps.get_db")
-    def test_get_entity_audit_history_permission_denied(self, mock_get_db, mock_get_user):
+    def test_get_entity_audit_history_permission_denied(self):
         """Test permission denial for entity audit history."""
-        client = TestClient(app)
-
+        # Setup mocks
         mock_db = Mock(spec=Session)
-        mock_get_db.return_value = mock_db
         mock_user = self.setup_test_user(UserRole.VIEWER)
-        mock_get_user.return_value = mock_user
 
         entity_id = uuid4()
 
-        with patch("backend.app.core.permissions.check_permission", return_value=False):
-            response = client.get(
-                f"/api/v1/audit-logs/entity/feature_flag/{entity_id}",
-                headers={"Authorization": "Bearer test-token"}
-            )
+        with self.override_deps(mock_user, mock_db):
+            with patch("backend.app.api.v1.endpoints.audit_logs.check_permission", return_value=False):
+                client = TestClient(app)
+                response = client.get(
+                    f"/api/v1/audit-logs/entity/feature_flag/{entity_id}",
+                    headers={"Authorization": "Bearer test-token"}
+                )
 
         assert response.status_code == 403
         assert "Not enough permissions" in response.json()["detail"]
 
-    @patch("backend.app.api.deps.get_current_active_user")
-    @patch("backend.app.api.deps.get_db")
-    def test_get_user_activity_success(self, mock_get_db, mock_get_user):
+    def test_get_user_activity_success(self):
         """Test successful user activity retrieval."""
-        client = TestClient(app)
-
+        # Setup mocks
         mock_db = Mock(spec=Session)
-        mock_get_db.return_value = mock_db
         mock_user = self.setup_test_user(UserRole.ADMIN)
-        mock_get_user.return_value = mock_user
 
         target_user_id = uuid4()
         mock_audit_logs = [
@@ -317,72 +312,63 @@ class TestAuditLogsAPI:
             )
         ]
 
-        with patch.object(AuditService, 'get_user_activity', return_value=mock_audit_logs):
-            with patch("backend.app.core.permissions.check_permission", return_value=True):
-                response = client.get(
-                    f"/api/v1/audit-logs/user/{target_user_id}",
-                    headers={"Authorization": "Bearer test-token"}
-                )
+        with self.override_deps(mock_user, mock_db):
+            with patch.object(AuditService, 'get_user_activity', return_value=mock_audit_logs):
+                with patch("backend.app.api.v1.endpoints.audit_logs.check_permission", return_value=True):
+                    client = TestClient(app)
+                    response = client.get(
+                        f"/api/v1/audit-logs/user/{target_user_id}",
+                        headers={"Authorization": "Bearer test-token"}
+                    )
 
         assert response.status_code == 200
         data = response.json()
         assert isinstance(data, list)
         assert len(data) == 1
 
-    @patch("backend.app.api.deps.get_current_active_user")
-    @patch("backend.app.api.deps.get_db")
-    def test_get_user_activity_own_data(self, mock_get_db, mock_get_user):
+    def test_get_user_activity_own_data(self):
         """Test that users can access their own activity."""
-        client = TestClient(app)
-
+        # Setup mocks
         mock_db = Mock(spec=Session)
-        mock_get_db.return_value = mock_db
         mock_user = self.setup_test_user(UserRole.VIEWER)
-        mock_get_user.return_value = mock_user
 
         mock_audit_logs = []
 
-        with patch.object(AuditService, 'get_user_activity', return_value=mock_audit_logs):
-            with patch("backend.app.core.permissions.check_permission", return_value=False):
-                response = client.get(
-                    f"/api/v1/audit-logs/user/{mock_user.id}",
-                    headers={"Authorization": "Bearer test-token"}
-                )
+        with self.override_deps(mock_user, mock_db):
+            with patch.object(AuditService, 'get_user_activity', return_value=mock_audit_logs):
+                with patch("backend.app.api.v1.endpoints.audit_logs.check_permission", return_value=False):
+                    client = TestClient(app)
+                    response = client.get(
+                        f"/api/v1/audit-logs/user/{mock_user.id}",
+                        headers={"Authorization": "Bearer test-token"}
+                    )
 
         assert response.status_code == 200
 
-    @patch("backend.app.api.deps.get_current_active_user")
-    @patch("backend.app.api.deps.get_db")
-    def test_get_user_activity_permission_denied(self, mock_get_db, mock_get_user):
+    def test_get_user_activity_permission_denied(self):
         """Test permission denial for other user's activity."""
-        client = TestClient(app)
-
+        # Setup mocks
         mock_db = Mock(spec=Session)
-        mock_get_db.return_value = mock_db
         mock_user = self.setup_test_user(UserRole.VIEWER)
-        mock_get_user.return_value = mock_user
 
         other_user_id = uuid4()
 
-        with patch("backend.app.core.permissions.check_permission", return_value=False):
-            response = client.get(
-                f"/api/v1/audit-logs/user/{other_user_id}",
-                headers={"Authorization": "Bearer test-token"}
-            )
+        with self.override_deps(mock_user, mock_db):
+            with patch("backend.app.api.v1.endpoints.audit_logs.check_permission", return_value=False):
+                client = TestClient(app)
+                response = client.get(
+                    f"/api/v1/audit-logs/user/{other_user_id}",
+                    headers={"Authorization": "Bearer test-token"}
+                )
 
         assert response.status_code == 403
         assert "Not enough permissions" in response.json()["detail"]
 
-    @patch("backend.app.api.deps.get_current_active_user")
-    @patch("backend.app.api.deps.get_db")
-    def test_get_audit_stats_success(self, mock_get_db, mock_get_user):
+    def test_get_audit_stats_success(self):
         """Test successful audit statistics retrieval."""
-        client = TestClient(app)
-
+        # Setup mocks
         mock_db = Mock(spec=Session)
-        mock_get_db.return_value = mock_db
         mock_user = self.setup_test_user(UserRole.ADMIN)
-        mock_get_user.return_value = mock_user
 
         mock_stats = {
             "total_logs": 100,
@@ -405,12 +391,14 @@ class TestAuditLogsAPI:
             },
         }
 
-        with patch.object(AuditService, 'get_audit_stats', return_value=mock_stats):
-            with patch("backend.app.core.permissions.check_permission", return_value=True):
-                response = client.get(
-                    "/api/v1/audit-logs/stats",
-                    headers={"Authorization": "Bearer test-token"}
-                )
+        with self.override_deps(mock_user, mock_db):
+            with patch.object(AuditService, 'get_audit_stats', return_value=mock_stats):
+                with patch("backend.app.api.v1.endpoints.audit_logs.check_permission", return_value=True):
+                    client = TestClient(app)
+                    response = client.get(
+                        "/api/v1/audit-logs/stats",
+                        headers={"Authorization": "Bearer test-token"}
+                    )
 
         assert response.status_code == 200
         data = response.json()
@@ -419,64 +407,55 @@ class TestAuditLogsAPI:
         assert "entity_counts" in data
         assert "most_active_users" in data
 
-    @patch("backend.app.api.deps.get_current_active_user")
-    @patch("backend.app.api.deps.get_db")
-    def test_get_audit_stats_permission_denied(self, mock_get_db, mock_get_user):
+    def test_get_audit_stats_permission_denied(self):
         """Test permission denial for audit statistics."""
-        client = TestClient(app)
-
+        # Setup mocks
         mock_db = Mock(spec=Session)
-        mock_get_db.return_value = mock_db
         mock_user = self.setup_test_user(UserRole.VIEWER)
-        mock_get_user.return_value = mock_user
 
-        with patch("backend.app.core.permissions.check_permission", return_value=False):
-            response = client.get(
-                "/api/v1/audit-logs/stats",
-                headers={"Authorization": "Bearer test-token"}
-            )
+        with self.override_deps(mock_user, mock_db):
+            with patch("backend.app.api.v1.endpoints.audit_logs.check_permission", return_value=False):
+                client = TestClient(app)
+                response = client.get(
+                    "/api/v1/audit-logs/stats",
+                    headers={"Authorization": "Bearer test-token"}
+                )
 
         assert response.status_code == 403
         assert "Not enough permissions" in response.json()["detail"]
 
-    @patch("backend.app.api.deps.get_current_active_user")
-    @patch("backend.app.api.deps.get_db")
-    def test_audit_logs_service_error_handling(self, mock_get_db, mock_get_user):
+    def test_audit_logs_service_error_handling(self):
         """Test error handling when audit service raises exceptions."""
-        client = TestClient(app)
-
+        # Setup mocks
         mock_db = Mock(spec=Session)
-        mock_get_db.return_value = mock_db
         mock_user = self.setup_test_user(UserRole.ADMIN)
-        mock_get_user.return_value = mock_user
 
-        with patch.object(AuditService, 'get_audit_logs', side_effect=Exception("Service error")):
-            with patch("backend.app.core.permissions.check_permission", return_value=True):
-                response = client.get(
-                    "/api/v1/audit-logs/",
-                    headers={"Authorization": "Bearer test-token"}
-                )
+        with self.override_deps(mock_user, mock_db):
+            with patch.object(AuditService, 'get_audit_logs', side_effect=Exception("Service error")):
+                with patch("backend.app.api.v1.endpoints.audit_logs.check_permission", return_value=True):
+                    client = TestClient(app)
+                    response = client.get(
+                        "/api/v1/audit-logs/",
+                        headers={"Authorization": "Bearer test-token"}
+                    )
 
         assert response.status_code == 500
         assert "Failed to retrieve audit logs" in response.json()["detail"]
 
-    @patch("backend.app.api.deps.get_current_active_user")
-    @patch("backend.app.api.deps.get_db")
-    def test_audit_logs_value_error_handling(self, mock_get_db, mock_get_user):
+    def test_audit_logs_value_error_handling(self):
         """Test handling of ValueError from audit service."""
-        client = TestClient(app)
-
+        # Setup mocks
         mock_db = Mock(spec=Session)
-        mock_get_db.return_value = mock_db
         mock_user = self.setup_test_user(UserRole.ADMIN)
-        mock_get_user.return_value = mock_user
 
-        with patch.object(AuditService, 'get_audit_logs', side_effect=ValueError("Invalid parameter")):
-            with patch("backend.app.core.permissions.check_permission", return_value=True):
-                response = client.get(
-                    "/api/v1/audit-logs/",
-                    headers={"Authorization": "Bearer test-token"}
-                )
+        with self.override_deps(mock_user, mock_db):
+            with patch.object(AuditService, 'get_audit_logs', side_effect=ValueError("Invalid parameter")):
+                with patch("backend.app.api.v1.endpoints.audit_logs.check_permission", return_value=True):
+                    client = TestClient(app)
+                    response = client.get(
+                        "/api/v1/audit-logs/",
+                        headers={"Authorization": "Bearer test-token"}
+                    )
 
         assert response.status_code == 400
         assert "Invalid parameter" in response.json()["detail"]
