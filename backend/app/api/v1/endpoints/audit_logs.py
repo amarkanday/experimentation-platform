@@ -6,6 +6,7 @@ enabling administrators and authorized users to view the complete
 audit trail of all system actions.
 """
 
+import os
 from datetime import datetime
 from typing import Optional
 from uuid import UUID
@@ -21,6 +22,13 @@ from fastapi import (
 from sqlalchemy.orm import Session
 
 from backend.app.api import deps
+# Use dev dependencies in development mode
+if os.environ.get("ENVIRONMENT") == "development":
+    from backend.app.api import deps_dev
+    get_current_active_user = deps_dev.get_current_active_user_dev
+else:
+    get_current_active_user = deps.get_current_active_user
+
 from backend.app.models.user import User
 from backend.app.models.audit_log import ActionType, EntityType
 from backend.app.schemas.audit_log import (
@@ -88,7 +96,7 @@ router = APIRouter(
 async def list_audit_logs(
     *,
     db: Session = Depends(deps.get_db),
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
     user_id: Optional[UUID] = Query(None, description="Filter by user ID"),
     entity_type: Optional[str] = Query(None, description="Filter by entity type"),
     entity_id: Optional[UUID] = Query(None, description="Filter by entity ID"),
@@ -203,7 +211,7 @@ async def list_audit_logs(
 async def get_entity_audit_history(
     *,
     db: Session = Depends(deps.get_db),
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
     entity_type: str = Path(..., description="Type of entity (feature_flag, experiment, etc.)"),
     entity_id: UUID = Path(..., description="ID of the entity"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum number of records to return"),
@@ -271,7 +279,7 @@ async def get_entity_audit_history(
 async def get_user_activity(
     *,
     db: Session = Depends(deps.get_db),
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
     user_id: UUID = Path(..., description="ID of the user"),
     from_date: Optional[datetime] = Query(None, description="Filter logs from this date"),
     to_date: Optional[datetime] = Query(None, description="Filter logs until this date"),
@@ -335,7 +343,7 @@ async def get_user_activity(
 async def get_audit_stats(
     *,
     db: Session = Depends(deps.get_db),
-    current_user: User = Depends(deps.get_current_active_user),
+    current_user: User = Depends(get_current_active_user),
     from_date: Optional[datetime] = Query(None, description="Filter logs from this date"),
     to_date: Optional[datetime] = Query(None, description="Filter logs until this date"),
 ) -> AuditStatsResponse:
