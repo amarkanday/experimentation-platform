@@ -116,12 +116,34 @@ The platform uses a modern microservices architecture:
 - Set proper environment variables: `POSTGRES_DB=experimentation POSTGRES_SCHEMA=experimentation`
 
 ### Testing Requirements
+
+**CRITICAL: Always Use Virtual Environment**
+- **Before running ANY tests, ALWAYS activate the virtualenv first**
+- The virtualenv is located at: `/Users/ashishmarkanday/github/experimentation-platform/venv`
+- Activation command: `source venv/bin/activate`
+- **Never run tests without activating venv first - this will cause import errors**
+
+```bash
+# Correct workflow for running tests:
+cd /Users/ashishmarkanday/github/experimentation-platform
+source venv/bin/activate
+export APP_ENV=test
+export TESTING=true
+python -m pytest backend/tests/ -v
+
+# Run specific test files
+source venv/bin/activate && python -m pytest backend/tests/unit/core/test_rules_engine.py -v
+
+# Run with markers
+source venv/bin/activate && pytest -m "unit" -v
+```
+
+**Test Best Practices**:
 - Write comprehensive tests for all new features
 - Use `pytest` with appropriate markers (unit, integration, api)
 - Clear schema cache between tests with `clear_schema_cache()`
 - Ensure PostgreSQL is running locally before tests
-- Activate virtualenv: `cd /Users/ashishmarkanday/github/experimentation-platform && source venv/bin/activate`
-- Set test environment: `APP_ENV=test TESTING=true`
+- Test users must have a `hashed_password` value set to avoid integrity errors
 
 ### Authentication & Permissions
 - Feature flag and report dependencies are async (use `await`)
@@ -179,11 +201,17 @@ cd infrastructure/cloudwatch
 
 ### Running Single Tests
 ```bash
+# ALWAYS activate venv first!
+source venv/bin/activate
+
 # Run specific test file
 python -m pytest backend/tests/unit/services/test_experiment_scheduler.py -v
 
 # Run tests with specific marker
 pytest -m "unit" -v
+
+# Run tests without coverage (faster)
+python -m pytest backend/tests/ -p no:cov
 ```
 
 ### Database Operations
@@ -204,8 +232,9 @@ alembic stamp heads
 - For "multiple heads" migration errors, create merge migration
 - Watch for duplicate SQLAlchemy relationship definitions
 - Ensure proper async/await usage in permission functions
+- **CRITICAL**: Always activate virtualenv before running tests or Python commands
 
-## Detailed Development Guidelines (from Cursor Configuration)
+## Detailed Development Guidelines
 
 ### Code Style Standards
 - Follow PEP 8 for Python code
@@ -276,6 +305,7 @@ The `core/permissions.py` module implements a comprehensive RBAC system with fou
   - `can_create_feature_flag`: Checks if user can create a feature flag (requires `await`)
   - `can_update_feature_flag`: Checks if user can update a feature flag (requires `await`)
   - `can_delete_feature_flag`: Checks if user can delete a feature flag (requires `await`)
+- Schema validation requires `owner_id` to be an integer - ensure proper type casting in tests
 
 ### Async/Sync Pattern Guidelines
 - **Feature flag and report-related dependencies are asynchronous** (use `await`)
@@ -374,4 +404,204 @@ with patch("backend.app.api.deps.get_current_superuser", return_value=mock_user)
 with patch("backend.app.core.permissions.check_permission", return_value=True):
     with patch("backend.app.api.deps.get_current_active_user", return_value=mock_user):
         response = client.post(f"/api/v1/safety/rollback/{feature_flag_id}")
+```
+
+## Feature Flag Rollout Schedules
+
+The platform supports gradual rollout of feature flags through rollout schedules. This enables controlled, staged deployments of features with configurable criteria for progression.
+
+### Key Components
+
+1. **Rollout Schedules**: Define a plan for gradually increasing a feature flag's rollout percentage over time.
+2. **Rollout Stages**: Individual steps within a schedule, each with a target percentage and conditions for activation.
+3. **Triggers**: Criteria that determine when to progress to the next stage (time-based, metric-based, or manual).
+
+### Database Models
+
+- `RolloutSchedule`: Main model for rollout schedules.
+- `RolloutStage`: Model for individual stages within a schedule.
+
+### API Endpoints
+
+All rollout schedule endpoints are available under `/api/v1/rollout-schedules`.
+
+- `POST /`: Create a new rollout schedule
+- `GET /`: List rollout schedules with optional filtering
+- `GET /{schedule_id}`: Get a specific rollout schedule
+- `PUT /{schedule_id}`: Update a rollout schedule
+- `DELETE /{schedule_id}`: Delete a rollout schedule
+- `POST /{schedule_id}/activate`: Activate a rollout schedule
+- `POST /{schedule_id}/pause`: Pause an active rollout schedule
+- `POST /{schedule_id}/cancel`: Cancel a rollout schedule
+- `POST /{schedule_id}/stages`: Add a stage to a rollout schedule
+- `PUT /stages/{stage_id}`: Update a rollout stage
+- `DELETE /stages/{stage_id}`: Delete a rollout stage
+- `POST /stages/{stage_id}/advance`: Manually advance a stage
+
+### Scheduler
+
+The `RolloutScheduler` runs in the background to automatically process active rollout schedules. It:
+
+1. Checks for schedules with pending stages that are eligible for activation
+2. Updates feature flag rollout percentages according to the stages
+3. Transitions stages and schedules through their lifecycle (pending → in_progress → completed)
+
+### Usage Example
+
+```python
+# Create a new rollout schedule
+schedule_data = {
+    "name": "Gradual Rollout for Feature X",
+    "description": "Gradually roll out Feature X over 3 weeks",
+    "feature_flag_id": "123e4567-e89b-12d3-a456-426614174000",
+    "start_date": "2023-12-01T00:00:00Z",
+    "end_date": "2023-12-31T23:59:59Z",
+    "max_percentage": 100,
+    "min_stage_duration": 24,  # Minimum 24 hours between stages
+    "stages": [
+        {
+            "name": "Initial Rollout",
+            "description": "First 10% of users",
+            "stage_order": 1,
+            "target_percentage": 10,
+            "trigger_type": "time_based",
+            "start_date": "2023-12-01T00:00:00Z"
+        },
+        {
+            "name": "Expanded Rollout",
+            "description": "Expand to 50% of users",
+            "stage_order": 2,
+            "target_percentage": 50,
+            "trigger_type": "time_based",
+            "start_date": "2023-12-15T00:00:00Z"
+        },
+        {
+            "name": "Full Rollout",
+            "description": "Roll out to all users",
+            "stage_order": 3,
+            "target_percentage": 100,
+            "trigger_type": "manual"
+        }
+    ]
+}
+```
+
+### Common Gotchas
+
+1. Rollout percentages must be non-decreasing across stages (e.g., 10% → 50% → 100%).
+2. Active schedules cannot have their stages deleted.
+3. Stage orders must be sequential without gaps.
+4. For time-based triggers, ensure the dates are in UTC timezone.
+5. Manual stages must be explicitly advanced using the API.
+
+## Enhanced Rules Engine (EP-001)
+
+The platform includes a comprehensive enhanced rules evaluation engine with advanced operators and performance optimizations.
+
+### Key Features
+
+1. **Advanced Operators**: 20+ operators including semantic version comparison, geo-distance, time windows, JSON path, array operations
+2. **Performance Optimizations**: Rule compilation caching, evaluation result caching, batch evaluation support
+3. **Metrics Collection**: P50, P95, P99 latency tracking with configurable sample windows
+4. **Thread Safety**: Concurrent evaluation support with proper locking mechanisms
+
+### Core Components
+
+- **RulesEvaluationService**: High-level service integrating caching, compilation, and metrics (`backend/app/services/rules_evaluation_service.py`)
+- **RuleCompiler**: Rule compilation and validation with LRU caching (`backend/app/core/rule_compiler.py`)
+- **EvaluationCache**: Thread-safe LRU cache for evaluation results with TTL support (`backend/app/core/evaluation_cache.py`)
+- **Rules Engine**: Core evaluation logic with all operator implementations (`backend/app/core/rules_engine.py`)
+
+### Operator Reference
+
+See `/docs/Enhanced_Rules_Engine_Reference.md` for complete operator documentation including:
+- Usage examples for all 20+ operators
+- Performance characteristics
+- Best practices and anti-patterns
+- Real-world scenario examples
+
+### Test Coverage
+
+- **131+ tests** covering all aspects of the enhanced rules engine
+- Days 1-2: Advanced operator tests (41 tests)
+- Days 3-4: Compilation and caching tests (54 tests)
+- Days 5-6: Service layer tests (21 tests)
+- Days 7-8: Integration tests (15 tests)
+- All tests passing with 51% overall code coverage
+
+### Performance Targets
+
+- Simple operator evaluation: > 100k ops/second
+- Complex operators (semver, geo): > 1k ops/second
+- 1000 user batch evaluation: < 5 seconds
+- Cache lookup: < 100ms for 10k lookups
+- Rule compilation cache provides 1.3-1.7x speedup
+
+## Git Workflow for Claude Code
+
+When committing changes:
+1. Use `git status` to check changes
+2. Use `git diff` to review modifications
+3. Stage files with `git add <files>`
+4. Create detailed commit messages following the format:
+   ```
+   Brief summary (50 chars or less)
+
+   Detailed explanation of changes:
+   - What was changed
+   - Why it was changed
+   - Any technical details
+
+   🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+   Co-Authored-By: Claude <noreply@anthropic.com>
+   ```
+5. Push with `git push origin main`
+
+## Claude Code Best Practices
+
+1. **Always activate virtualenv first** before running any Python commands
+2. Read relevant documentation files in `/docs` before making changes
+3. Check existing test patterns before writing new tests
+4. Use the Task tool for complex multi-file searches rather than running grep directly
+5. Run tests after making changes to verify functionality
+6. Follow the established code style and import patterns
+7. When fixing bugs, understand the root cause before implementing fixes
+8. Reference file paths with line numbers when discussing code locations
+
+## Common Patterns for Claude Code
+
+### Running Tests
+```bash
+# Standard test workflow
+source venv/bin/activate
+export APP_ENV=test TESTING=true
+python -m pytest backend/tests/unit/core/ -v --tb=short
+
+# Quick test without coverage
+source venv/bin/activate && python -m pytest backend/tests/ -p no:cov -q
+```
+
+### Database Migrations
+```bash
+# Create migration
+alembic revision --autogenerate -m "description"
+
+# Apply migration
+python -m alembic -c app/db/alembic.ini upgrade head
+
+# Check migration status
+python -m alembic -c app/db/alembic.ini current
+```
+
+### Code Quality Checks
+```bash
+# Format code
+black backend/
+
+# Check imports
+python standardize_metrics_imports.py --check
+
+# Run type checking
+mypy backend/app/
 ```
