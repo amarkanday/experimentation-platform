@@ -451,7 +451,7 @@ class TestRulesPerformanceBenchmarks:
             (OperatorType.GREATER_THAN, 25),
             (OperatorType.SEMANTIC_VERSION, "1.2.0"),
             (OperatorType.GEO_DISTANCE, [40.7128, -74.0060]),
-            (OperatorType.JSON_PATH, "premium"),
+            (OperatorType.JSON_PATH, "$.premium"),
         ]
 
         for operator, value in operators_to_test:
