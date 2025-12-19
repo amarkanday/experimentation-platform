@@ -35,6 +35,70 @@ class AssignmentService:
             default='experimently-experiments'
         )
 
+        # Cache for experiment configurations (Lambda warm-start optimization)
+        self._experiment_cache: Dict[str, Dict[str, Any]] = {}
+        self.cache_ttl = 300  # 5 minutes in seconds
+
+        # Cache hit rate tracking
+        self._cache_hits = 0
+        self._cache_misses = 0
+
+    def evaluate_targeting_rules(
+        self,
+        targeting_rules: Optional[list],
+        context: Optional[Dict[str, Any]]
+    ) -> bool:
+        """
+        Evaluate targeting rules against user context.
+
+        Args:
+            targeting_rules: List of targeting rule dictionaries
+            context: User context attributes
+
+        Returns:
+            True if user matches all rules (AND logic), False otherwise
+        """
+        # No rules means all users qualify
+        if not targeting_rules:
+            return True
+
+        # No context means user doesn't match
+        if not context:
+            return False
+
+        # Evaluate each rule (AND logic - all must match)
+        for rule in targeting_rules:
+            attribute = rule.get('attribute')
+            operator = rule.get('operator')
+            value = rule.get('value')
+
+            # Get user's attribute value from context
+            user_value = context.get(attribute)
+
+            # Missing attribute means no match
+            if user_value is None:
+                return False
+
+            # Evaluate based on operator
+            if operator == 'equals':
+                if user_value != value:
+                    return False
+            elif operator == 'in':
+                if user_value not in value:
+                    return False
+            elif operator == 'greater_than':
+                if user_value <= value:
+                    return False
+            elif operator == 'less_than':
+                if user_value >= value:
+                    return False
+            else:
+                logger.warning(f"Unknown operator: {operator}")
+                return False
+
+        # All rules matched
+        return True
+
     def assign_variant(
         self,
         user_id: str,
@@ -62,6 +126,21 @@ class AssignmentService:
                 }
             )
             return None
+
+        # Check targeting rules if they exist
+        if experiment_config.targeting_rules:
+            if not self.evaluate_targeting_rules(
+                experiment_config.targeting_rules,
+                context
+            ):
+                logger.info(
+                    f"User excluded by targeting rules",
+                    extra={
+                        'user_id': user_id,
+                        'experiment_id': experiment_config.experiment_id
+                    }
+                )
+                return None
 
         # Convert variants to format expected by hasher
         variants = [
@@ -157,6 +236,94 @@ class AssignmentService:
                 extra={'experiment_key': experiment_key}
             )
             return None
+
+    def get_experiment_config_cached(self, experiment_key: str) -> Optional[ExperimentConfig]:
+        """
+        Fetch experiment configuration with Lambda warm-start caching.
+
+        Args:
+            experiment_key: Unique experiment key
+
+        Returns:
+            ExperimentConfig if found, None otherwise
+        """
+        # Check cache first
+        if experiment_key in self._experiment_cache:
+            if self._is_cache_valid(experiment_key):
+                self._record_cache_hit()
+                logger.debug(f"Cache hit for experiment: {experiment_key}")
+                return self._experiment_cache[experiment_key]['config']
+            else:
+                # Cache expired, remove it
+                del self._experiment_cache[experiment_key]
+
+        # Cache miss - fetch from DynamoDB
+        self._record_cache_miss()
+        logger.debug(f"Cache miss for experiment: {experiment_key}")
+
+        config = self.get_experiment_config(experiment_key)
+
+        # Cache the result (even if None to avoid repeated lookups)
+        self._cache_experiment_config(experiment_key, config)
+
+        return config
+
+    def _is_cache_valid(self, experiment_key: str) -> bool:
+        """
+        Check if cache entry is still valid based on TTL.
+
+        Args:
+            experiment_key: Experiment key to check
+
+        Returns:
+            True if cache entry is valid, False otherwise
+        """
+        if experiment_key not in self._experiment_cache:
+            return False
+
+        cache_entry = self._experiment_cache[experiment_key]
+        cached_timestamp = cache_entry['timestamp']
+        current_timestamp = datetime.now(timezone.utc).timestamp()
+
+        # Check if cache has expired
+        return (current_timestamp - cached_timestamp) < self.cache_ttl
+
+    def _cache_experiment_config(
+        self,
+        experiment_key: str,
+        config: Optional[ExperimentConfig]
+    ) -> None:
+        """
+        Store experiment config in cache with timestamp.
+
+        Args:
+            experiment_key: Experiment key
+            config: Experiment configuration (can be None)
+        """
+        self._experiment_cache[experiment_key] = {
+            'config': config,
+            'timestamp': datetime.now(timezone.utc).timestamp()
+        }
+
+    def _record_cache_hit(self) -> None:
+        """Record a cache hit for metrics tracking."""
+        self._cache_hits += 1
+
+    def _record_cache_miss(self) -> None:
+        """Record a cache miss for metrics tracking."""
+        self._cache_misses += 1
+
+    def get_cache_hit_rate(self) -> float:
+        """
+        Calculate cache hit rate percentage.
+
+        Returns:
+            Hit rate as a decimal (0.0 to 1.0)
+        """
+        total_requests = self._cache_hits + self._cache_misses
+        if total_requests == 0:
+            return 0.0
+        return self._cache_hits / total_requests
 
     def create_assignment(
         self,
