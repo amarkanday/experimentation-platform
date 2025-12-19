@@ -115,7 +115,16 @@ class AssignmentService:
 
         Returns:
             Variant key if user is assigned, None if excluded by traffic allocation
+
+        Raises:
+            ValueError: If user_id is None or empty
         """
+        # Validate user_id
+        if user_id is None:
+            raise ValueError("user_id cannot be None")
+        if not user_id or not user_id.strip():
+            raise ValueError("user_id cannot be empty")
+
         # Validate experiment config
         if not self.validate_experiment_config(experiment_config):
             logger.warning(
