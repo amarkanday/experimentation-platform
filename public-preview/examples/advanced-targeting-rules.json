@@ -1,0 +1,417 @@
+{
+  "title": "Advanced Targeting Rules - Real-World Examples",
+  "description": "Demonstrates sophisticated targeting capabilities using the Enhanced Rules Engine with 20+ operators",
+  "examples": [
+    {
+      "name": "Premium iOS Users in North America During Business Hours",
+      "use_case": "Target high-value mobile users for premium feature rollout during active hours",
+      "targeting_rule": {
+        "logical_operator": "AND",
+        "conditions": [
+          {
+            "attribute": "subscription_tier",
+            "operator": "equals",
+            "value": "premium",
+            "description": "Only premium subscribers"
+          },
+          {
+            "attribute": "platform",
+            "operator": "equals",
+            "value": "iOS",
+            "description": "iOS users only"
+          },
+          {
+            "attribute": "app_version",
+            "operator": "semver_gte",
+            "value": "2.5.0",
+            "description": "App version 2.5.0 or higher"
+          },
+          {
+            "attribute": "country",
+            "operator": "in",
+            "value": ["US", "CA", "MX"],
+            "description": "North American users"
+          },
+          {
+            "attribute": "current_time",
+            "operator": "time_window",
+            "value": {
+              "start": "09:00",
+              "end": "17:00",
+              "timezone": "America/New_York",
+              "days": ["MON", "TUE", "WED", "THU", "FRI"]
+            },
+            "description": "Business hours in Eastern Time"
+          }
+        ]
+      },
+      "estimated_reach": "4.2% of user base",
+      "rollout_percentage": 25
+    },
+    {
+      "name": "Geographic Proximity Targeting for Local Features",
+      "use_case": "Enable location-based features for users within 50km of major cities",
+      "targeting_rule": {
+        "logical_operator": "OR",
+        "conditions": [
+          {
+            "attribute": "user_location",
+            "operator": "geo_distance_within",
+            "value": {
+              "latitude": 40.7128,
+              "longitude": -74.0060,
+              "radius_km": 50,
+              "location_name": "New York City"
+            },
+            "description": "Within 50km of NYC"
+          },
+          {
+            "attribute": "user_location",
+            "operator": "geo_distance_within",
+            "value": {
+              "latitude": 34.0522,
+              "longitude": -118.2437,
+              "radius_km": 50,
+              "location_name": "Los Angeles"
+            },
+            "description": "Within 50km of LA"
+          },
+          {
+            "attribute": "user_location",
+            "operator": "geo_distance_within",
+            "value": {
+              "latitude": 41.8781,
+              "longitude": -87.6298,
+              "radius_km": 50,
+              "location_name": "Chicago"
+            },
+            "description": "Within 50km of Chicago"
+          }
+        ]
+      },
+      "estimated_reach": "28% of US user base",
+      "rollout_percentage": 100,
+      "note": "Uses Haversine formula for accurate distance calculation"
+    },
+    {
+      "name": "Beta Testers with Specific Usage Patterns",
+      "use_case": "Target engaged beta testers for advanced feature testing",
+      "targeting_rule": {
+        "logical_operator": "AND",
+        "conditions": [
+          {
+            "attribute": "user_tags",
+            "operator": "array_contains",
+            "value": "beta_tester",
+            "description": "Has beta_tester tag"
+          },
+          {
+            "attribute": "login_count_30_days",
+            "operator": "greater_than",
+            "value": 15,
+            "description": "Logged in 15+ times in last 30 days"
+          },
+          {
+            "attribute": "feature_usage",
+            "operator": "json_path",
+            "value": {
+              "path": "$.advanced_features.usage_count",
+              "operator": "greater_than",
+              "compare_value": 5
+            },
+            "description": "Used advanced features 5+ times"
+          },
+          {
+            "attribute": "feedback_provided",
+            "operator": "equals",
+            "value": true,
+            "description": "Provided feedback on previous betas"
+          }
+        ]
+      },
+      "estimated_reach": "1.2% of user base",
+      "rollout_percentage": 100,
+      "note": "High-engagement beta testers only"
+    },
+    {
+      "name": "Enterprise Users with Team Collaboration Features",
+      "use_case": "Rollout team features to enterprise accounts with multiple team members",
+      "targeting_rule": {
+        "logical_operator": "AND",
+        "conditions": [
+          {
+            "attribute": "account_type",
+            "operator": "equals",
+            "value": "enterprise",
+            "description": "Enterprise account"
+          },
+          {
+            "attribute": "team_members",
+            "operator": "array_length",
+            "value": {
+              "operator": "greater_than_or_equal",
+              "compare_value": 5
+            },
+            "description": "5 or more team members"
+          },
+          {
+            "attribute": "features_enabled",
+            "operator": "array_contains",
+            "value": "team_workspace",
+            "description": "Team workspace enabled"
+          },
+          {
+            "attribute": "contract_value",
+            "operator": "greater_than_or_equal",
+            "value": 10000,
+            "description": "Contract value $10k+"
+          }
+        ]
+      },
+      "estimated_reach": "8.5% of enterprise accounts",
+      "rollout_percentage": 50
+    },
+    {
+      "name": "Mobile App Users with Specific Device Capabilities",
+      "use_case": "Target users with devices that support advanced features (biometric auth, NFC, etc.)",
+      "targeting_rule": {
+        "logical_operator": "AND",
+        "conditions": [
+          {
+            "attribute": "device_capabilities",
+            "operator": "array_all",
+            "value": ["biometric_auth", "nfc", "bluetooth_5"],
+            "description": "All required device capabilities present"
+          },
+          {
+            "attribute": "os_version",
+            "operator": "semver_gte",
+            "value": "14.0.0",
+            "description": "iOS 14+ or Android equivalent"
+          },
+          {
+            "attribute": "app_install_date",
+            "operator": "less_than",
+            "value": "2024-01-01",
+            "description": "Installed before 2024 (established users)"
+          }
+        ]
+      },
+      "estimated_reach": "32% of mobile users",
+      "rollout_percentage": 25
+    },
+    {
+      "name": "Weekend Shoppers in EMEA Region",
+      "use_case": "E-commerce promotion targeting weekend shoppers in Europe, Middle East, Africa",
+      "targeting_rule": {
+        "logical_operator": "AND",
+        "conditions": [
+          {
+            "attribute": "region",
+            "operator": "in",
+            "value": ["EMEA"],
+            "description": "EMEA region"
+          },
+          {
+            "attribute": "current_time",
+            "operator": "time_window",
+            "value": {
+              "start": "00:00",
+              "end": "23:59",
+              "timezone": "Europe/London",
+              "days": ["SAT", "SUN"]
+            },
+            "description": "Weekends only"
+          },
+          {
+            "attribute": "previous_purchase_count",
+            "operator": "greater_than",
+            "value": 0,
+            "description": "Has purchased before"
+          },
+          {
+            "attribute": "email_preferences",
+            "operator": "json_path",
+            "value": {
+              "path": "$.promotions_enabled",
+              "operator": "equals",
+              "compare_value": true
+            },
+            "description": "Opted in to promotions"
+          }
+        ]
+      },
+      "estimated_reach": "12% of EMEA user base",
+      "rollout_percentage": 100,
+      "note": "Time-based targeting for weekend promotions"
+    },
+    {
+      "name": "Power Users with High Engagement Score",
+      "use_case": "Early access to new features for most engaged users",
+      "targeting_rule": {
+        "logical_operator": "AND",
+        "conditions": [
+          {
+            "attribute": "engagement_score",
+            "operator": "greater_than_or_equal",
+            "value": 80,
+            "description": "Engagement score 80+"
+          },
+          {
+            "attribute": "tenure_days",
+            "operator": "greater_than",
+            "value": 90,
+            "description": "Account age 90+ days"
+          },
+          {
+            "attribute": "referrals",
+            "operator": "array_length",
+            "value": {
+              "operator": "greater_than",
+              "compare_value": 2
+            },
+            "description": "Referred 3+ users"
+          },
+          {
+            "attribute": "nps_score",
+            "operator": "greater_than_or_equal",
+            "value": 9,
+            "description": "NPS promoter (9-10)"
+          }
+        ]
+      },
+      "estimated_reach": "5.8% of user base",
+      "rollout_percentage": 100,
+      "note": "VIP early access program"
+    },
+    {
+      "name": "API Version Compatibility Targeting",
+      "use_case": "Gradually deprecate old API versions by targeting compatible client versions",
+      "targeting_rule": {
+        "logical_operator": "OR",
+        "conditions": [
+          {
+            "attribute": "api_client_version",
+            "operator": "semver_gte",
+            "value": "3.0.0",
+            "description": "Client version 3.0.0+ (supports new API)"
+          },
+          {
+            "attribute": "api_client_version",
+            "operator": "regex_match",
+            "value": "^3\\.[0-9]+\\.[0-9]+$",
+            "description": "All 3.x versions"
+          }
+        ]
+      },
+      "estimated_reach": "67% of API clients",
+      "rollout_percentage": 100,
+      "note": "Safe migration path for API version upgrade"
+    },
+    {
+      "name": "Conditional Feature Bundles",
+      "use_case": "Enable feature bundles based on subscription tier and usage history",
+      "targeting_rule": {
+        "logical_operator": "AND",
+        "conditions": [
+          {
+            "attribute": "subscription_tier",
+            "operator": "in",
+            "value": ["professional", "enterprise"],
+            "description": "Pro or Enterprise tier"
+          },
+          {
+            "attribute": "features_used",
+            "operator": "array_any",
+            "value": ["analytics_dashboard", "advanced_reporting", "api_access"],
+            "description": "Used at least one advanced feature"
+          },
+          {
+            "attribute": "account_status",
+            "operator": "not_equals",
+            "value": "trial",
+            "description": "Not on trial (paying customer)"
+          },
+          {
+            "attribute": "billing_current",
+            "operator": "equals",
+            "value": true,
+            "description": "Billing up to date"
+          }
+        ]
+      },
+      "estimated_reach": "22% of paid users",
+      "rollout_percentage": 50
+    },
+    {
+      "name": "Churn Risk Mitigation Targeting",
+      "use_case": "Re-engagement campaign for users showing churn signals",
+      "targeting_rule": {
+        "logical_operator": "AND",
+        "conditions": [
+          {
+            "attribute": "days_since_last_login",
+            "operator": "greater_than",
+            "value": 14,
+            "description": "Inactive for 14+ days"
+          },
+          {
+            "attribute": "lifetime_value",
+            "operator": "greater_than",
+            "value": 500,
+            "description": "High lifetime value customer"
+          },
+          {
+            "attribute": "support_tickets_30_days",
+            "operator": "greater_than",
+            "value": 2,
+            "description": "Multiple recent support tickets (frustration signal)"
+          },
+          {
+            "attribute": "subscription_renewal_date",
+            "operator": "less_than",
+            "value": "2025-01-15",
+            "description": "Renewal coming up soon"
+          }
+        ]
+      },
+      "estimated_reach": "3.2% of customer base",
+      "rollout_percentage": 100,
+      "note": "Proactive retention targeting"
+    }
+  ],
+  "operator_reference": {
+    "basic_operators": [
+      "equals", "not_equals", "greater_than", "less_than",
+      "greater_than_or_equal", "less_than_or_equal", "in", "not_in"
+    ],
+    "string_operators": [
+      "contains", "not_contains", "starts_with", "ends_with", "regex_match"
+    ],
+    "advanced_operators": [
+      "semver_eq", "semver_gt", "semver_gte", "semver_lt", "semver_lte",
+      "geo_distance_within", "time_window", "json_path",
+      "array_contains", "array_length", "array_all", "array_any"
+    ]
+  },
+  "best_practices": {
+    "performance": [
+      "Simple operators (equals, in) are fastest (125k+ ops/sec)",
+      "Complex operators (semver, geo) are still fast (2.5k-3k ops/sec)",
+      "Use caching for frequently evaluated rules",
+      "Batch evaluation for processing multiple users"
+    ],
+    "targeting_strategy": [
+      "Start with narrow targeting (10-25%) and expand gradually",
+      "Use AND logic for precise targeting, OR for broader reach",
+      "Combine simple and complex operators for balanced performance",
+      "Test rules with sample data before production deployment"
+    ],
+    "monitoring": [
+      "Track evaluation latency for complex rules",
+      "Monitor cache hit rates (target: 90%+)",
+      "Set up alerts for unexpected targeting behavior",
+      "Review audit logs for targeting changes"
+    ]
+  }
+}

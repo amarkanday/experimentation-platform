@@ -1,0 +1,297 @@
+{
+  "experiment_report_title": "Pricing Page Redesign - Q4 2024 Experiment Results",
+  "experiment_key": "pricing-page-redesign",
+  "experiment_name": "Pricing Page Redesign - Annual Discount Emphasis",
+  "status": "completed",
+  "owner": "john.smith@acme-corp.com",
+  "dates": {
+    "created": "2024-12-10T09:00:00Z",
+    "started": "2024-12-14T09:00:00Z",
+    "completed": "2024-12-25T10:00:00Z",
+    "duration_days": 21
+  },
+  "hypothesis": {
+    "statement": "Simplified pricing tiers with prominent annual discount messaging will increase conversion rates by 15%",
+    "rationale": "User research indicates customers are confused by complex pricing tiers and miss the value proposition of annual plans"
+  },
+  "experiment_design": {
+    "type": "Multivariate A/B test",
+    "variants": [
+      {
+        "name": "control",
+        "description": "Current pricing page with 4 tiers (Free, Basic, Pro, Enterprise)",
+        "traffic_allocation_percentage": 34
+      },
+      {
+        "name": "treatment_v1",
+        "description": "Simplified to 3 tiers (Starter, Professional, Enterprise)",
+        "traffic_allocation_percentage": 33
+      },
+      {
+        "name": "treatment_v2",
+        "description": "3 tiers with annual discount highlighted in green banner",
+        "traffic_allocation_percentage": 33
+      }
+    ],
+    "targeting": {
+      "criteria": [
+        "Country: US, CA, GB, AU (English-speaking markets)",
+        "Subscription status: None (new customers only)",
+        "Device: All devices",
+        "Traffic source: All sources"
+      ]
+    },
+    "sample_size_calculation": {
+      "baseline_conversion_rate": 12.3,
+      "minimum_detectable_effect": 15.0,
+      "statistical_power": 0.8,
+      "significance_level": 0.05,
+      "required_sample_per_variant": 38000,
+      "total_required_sample": 114000
+    }
+  },
+  "sample_size": {
+    "total_users": 125847,
+    "control": 62891,
+    "treatment_v1": 31234,
+    "treatment_v2": 31722,
+    "note": "Traffic rebalanced mid-experiment after early signals showed treatment_v1 underperformance"
+  },
+  "primary_metric": {
+    "metric_name": "conversion_to_paid",
+    "metric_description": "Percentage of users who converted to a paid plan within 7 days",
+    "results": {
+      "control": {
+        "conversions": 7735,
+        "total_users": 62891,
+        "conversion_rate": 12.3,
+        "confidence_interval_95": [11.9, 12.7]
+      },
+      "treatment_v1": {
+        "conversions": 3864,
+        "total_users": 31234,
+        "conversion_rate": 12.37,
+        "confidence_interval_95": [11.8, 12.9],
+        "lift_vs_control": 0.6,
+        "statistical_significance": "Not significant (p=0.78)",
+        "recommendation": "No improvement"
+      },
+      "treatment_v2": {
+        "conversions": 4695,
+        "total_users": 31722,
+        "conversion_rate": 14.8,
+        "confidence_interval_95": [14.3, 15.3],
+        "lift_vs_control": 20.3,
+        "statistical_significance": "Highly significant (p<0.001)",
+        "recommendation": "Winner - deploy to production"
+      }
+    }
+  },
+  "secondary_metrics": {
+    "time_on_page": {
+      "description": "Average time spent on pricing page (seconds)",
+      "control": 42.3,
+      "treatment_v1": 38.7,
+      "treatment_v2": 51.2,
+      "insight": "Treatment_v2 users spent 21% more time engaging with pricing information"
+    },
+    "scroll_depth": {
+      "description": "Percentage of users who scrolled to bottom of page",
+      "control": 67.4,
+      "treatment_v1": 64.8,
+      "treatment_v2": 78.9,
+      "insight": "Treatment_v2 design encouraged more complete page exploration"
+    },
+    "pricing_table_clicks": {
+      "description": "Number of clicks on pricing tier cards",
+      "control": 1.2,
+      "treatment_v1": 1.1,
+      "treatment_v2": 1.8,
+      "insight": "Treatment_v2 annual discount banner drove more engagement"
+    },
+    "annual_plan_selection_rate": {
+      "description": "Percentage of converters who chose annual billing",
+      "control": 28.4,
+      "treatment_v1": 31.2,
+      "treatment_v2": 52.7,
+      "insight": "Treatment_v2 dramatically increased annual plan adoption"
+    }
+  },
+  "revenue_impact": {
+    "description": "Estimated revenue impact based on average order value and plan selection",
+    "control": {
+      "avg_revenue_per_user": 47.82,
+      "total_revenue": 489126.62
+    },
+    "treatment_v2": {
+      "avg_revenue_per_user": 52.14,
+      "total_revenue": 554783.08,
+      "revenue_lift": 9.0,
+      "revenue_lift_per_user": 4.32
+    },
+    "annualized_revenue_projection": {
+      "current_annual_customers": 125000,
+      "projected_additional_revenue": 540000,
+      "note": "Based on 20.3% conversion lift and 9% revenue per user lift"
+    }
+  },
+  "statistical_analysis": {
+    "methodology": "Bayesian A/B testing with frequentist validation",
+    "bayesian_analysis": {
+      "treatment_v2_probability_to_beat_control": 99.8,
+      "expected_loss_if_wrong": 0.002,
+      "recommendation": "Extremely safe to deploy"
+    },
+    "frequentist_analysis": {
+      "test_type": "Two-proportion z-test",
+      "p_value": 0.00023,
+      "significance_level": 0.05,
+      "result": "Reject null hypothesis - treatment_v2 significantly better than control"
+    },
+    "multiple_testing_correction": {
+      "method": "Bonferroni correction",
+      "adjusted_significance_level": 0.025,
+      "result": "Treatment_v2 remains significant after correction"
+    },
+    "sequential_testing": {
+      "enabled": true,
+      "early_stopping_rule": "O'Brien-Fleming bounds",
+      "interim_analysis_count": 2,
+      "note": "Experiment could have been stopped early at day 14 with same conclusion"
+    }
+  },
+  "segmentation_analysis": {
+    "by_device": {
+      "desktop": {
+        "control_conversion": 13.8,
+        "treatment_v2_conversion": 16.2,
+        "lift": 17.4
+      },
+      "mobile": {
+        "control_conversion": 10.1,
+        "treatment_v2_conversion": 12.8,
+        "lift": 26.7,
+        "insight": "Mobile users benefited more from simplified design"
+      },
+      "tablet": {
+        "control_conversion": 11.5,
+        "treatment_v2_conversion": 14.1,
+        "lift": 22.6
+      }
+    },
+    "by_traffic_source": {
+      "organic_search": {
+        "control_conversion": 14.2,
+        "treatment_v2_conversion": 17.1,
+        "lift": 20.4
+      },
+      "paid_search": {
+        "control_conversion": 11.8,
+        "treatment_v2_conversion": 14.5,
+        "lift": 22.9
+      },
+      "direct": {
+        "control_conversion": 15.7,
+        "treatment_v2_conversion": 18.9,
+        "lift": 20.4
+      },
+      "social": {
+        "control_conversion": 8.9,
+        "treatment_v2_conversion": 11.2,
+        "lift": 25.8,
+        "insight": "Social traffic showed highest lift, likely due to clear value prop"
+      }
+    },
+    "by_company_size": {
+      "individual": {
+        "control_conversion": 9.2,
+        "treatment_v2_conversion": 11.8,
+        "lift": 28.3
+      },
+      "small_team_1_10": {
+        "control_conversion": 13.5,
+        "treatment_v2_conversion": 16.2,
+        "lift": 20.0
+      },
+      "medium_team_11_50": {
+        "control_conversion": 15.8,
+        "treatment_v2_conversion": 18.4,
+        "lift": 16.5
+      },
+      "enterprise_50_plus": {
+        "control_conversion": 18.2,
+        "treatment_v2_conversion": 20.1,
+        "lift": 10.4,
+        "insight": "Smaller teams benefited more from simplified pricing"
+      }
+    }
+  },
+  "novelty_effect_analysis": {
+    "description": "Analysis of conversion rates over time to detect novelty effects",
+    "week_1": {
+      "control_conversion": 12.1,
+      "treatment_v2_conversion": 15.2,
+      "lift": 25.6
+    },
+    "week_2": {
+      "control_conversion": 12.3,
+      "treatment_v2_conversion": 14.9,
+      "lift": 21.1
+    },
+    "week_3": {
+      "control_conversion": 12.5,
+      "treatment_v2_conversion": 14.3,
+      "lift": 14.4
+    },
+    "conclusion": "Some novelty effect detected (lift decreased from 25.6% to 14.4%), but treatment still significantly better than control",
+    "recommendation": "Monitor post-launch metrics for 4 weeks to confirm sustained lift"
+  },
+  "quality_assurance": {
+    "sample_ratio_mismatch": {
+      "expected_ratio": "34:33:33",
+      "actual_ratio": "50:25:25",
+      "p_value": 0.62,
+      "result": "No significant SRM detected"
+    },
+    "data_quality_checks": {
+      "duplicate_users": 0,
+      "bot_traffic_filtered": 2847,
+      "incomplete_sessions_excluded": 1234,
+      "outliers_removed": 89
+    },
+    "randomization_check": {
+      "method": "Chi-square test on user characteristics",
+      "result": "No significant imbalance detected",
+      "balanced_on": ["device_type", "traffic_source", "company_size", "geographic_location"]
+    }
+  },
+  "recommendations": {
+    "primary_recommendation": "Deploy treatment_v2 (annual discount emphasis) to 100% of traffic",
+    "implementation_plan": {
+      "phase_1": "Deploy to 25% of traffic for 1 week",
+      "phase_2": "Expand to 50% for 1 week",
+      "phase_3": "Full rollout to 100%",
+      "monitoring": "Track conversion rates, revenue metrics, and customer feedback for 4 weeks post-launch"
+    },
+    "follow_up_experiments": [
+      "Test different annual discount percentages (20% vs 30% vs 40%)",
+      "Test placement of annual discount banner (top vs inline vs sticky)",
+      "A/B test enterprise tier messaging for larger companies"
+    ],
+    "key_learnings": [
+      "Users respond strongly to clear value propositions (annual savings)",
+      "Simplified pricing reduces decision paralysis",
+      "Visual emphasis (green banner) effectively draws attention",
+      "Mobile users benefit more from simplified layouts",
+      "Smaller teams show higher lift than enterprise customers"
+    ]
+  },
+  "business_impact_summary": {
+    "conversion_rate_improvement": "20.3%",
+    "revenue_per_user_improvement": "9.0%",
+    "estimated_annual_revenue_increase": "$540,000",
+    "annual_plan_adoption_increase": "24.3 percentage points",
+    "statistical_confidence": "99.8%",
+    "production_readiness": "Approved for immediate rollout"
+  }
+}

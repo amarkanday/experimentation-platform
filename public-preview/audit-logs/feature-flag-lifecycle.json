@@ -1,0 +1,140 @@
+{
+  "description": "Feature Flag Lifecycle Audit Logs - Demonstrates complete audit trail for feature flag operations",
+  "use_case": "Compliance, change tracking, debugging, security monitoring",
+  "sample_logs": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440001",
+      "timestamp": "2024-12-15T14:30:22Z",
+      "user_email": "sarah.chen@acme-corp.com",
+      "user_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+      "action_type": "feature_flag_create",
+      "entity_type": "feature_flag",
+      "entity_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "entity_name": "new-checkout-flow",
+      "old_value": null,
+      "new_value": null,
+      "action_description": "created",
+      "reason": "Implementing new one-click checkout experience for Q1 conversion optimization",
+      "created_at": "2024-12-15T14:30:22Z",
+      "updated_at": "2024-12-15T14:30:22Z"
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440002",
+      "timestamp": "2024-12-15T14:32:18Z",
+      "user_email": "sarah.chen@acme-corp.com",
+      "user_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+      "action_type": "feature_flag_update",
+      "entity_type": "feature_flag",
+      "entity_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "entity_name": "new-checkout-flow",
+      "old_value": "{\"rollout_percentage\": 0, \"targeting_rules\": []}",
+      "new_value": "{\"rollout_percentage\": 10, \"targeting_rules\": [{\"attribute\": \"user_tier\", \"operator\": \"equals\", \"value\": \"beta_tester\"}]}",
+      "action_description": "updated",
+      "reason": "Adding targeting rule for beta testers, setting initial 10% rollout",
+      "created_at": "2024-12-15T14:32:18Z",
+      "updated_at": "2024-12-15T14:32:18Z"
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440003",
+      "timestamp": "2024-12-15T14:35:45Z",
+      "user_email": "sarah.chen@acme-corp.com",
+      "user_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+      "action_type": "feature_flag_activate",
+      "entity_type": "feature_flag",
+      "entity_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "entity_name": "new-checkout-flow",
+      "old_value": "inactive",
+      "new_value": "active",
+      "action_description": "activated",
+      "reason": "Starting beta test with internal users",
+      "created_at": "2024-12-15T14:35:45Z",
+      "updated_at": "2024-12-15T14:35:45Z"
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440004",
+      "timestamp": "2024-12-15T16:20:33Z",
+      "user_email": "sarah.chen@acme-corp.com",
+      "user_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+      "action_type": "feature_flag_update",
+      "entity_type": "feature_flag",
+      "entity_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "entity_name": "new-checkout-flow",
+      "old_value": "{\"rollout_percentage\": 10}",
+      "new_value": "{\"rollout_percentage\": 50}",
+      "action_description": "updated",
+      "reason": "Beta test successful - expanding rollout to 50% of users. Initial metrics show 15% improvement in conversion rate.",
+      "created_at": "2024-12-15T16:20:33Z",
+      "updated_at": "2024-12-15T16:20:33Z"
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440005",
+      "timestamp": "2024-12-15T16:45:33Z",
+      "user_email": "system@experimently.com",
+      "user_id": null,
+      "action_type": "safety_rollback",
+      "entity_type": "feature_flag",
+      "entity_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "entity_name": "new-checkout-flow",
+      "old_value": "50",
+      "new_value": "0",
+      "action_description": "rolled back",
+      "reason": "Automatic rollback triggered: Error rate exceeded threshold (5.2% > 5.0%) - CheckoutService timeout errors increased",
+      "created_at": "2024-12-15T16:45:33Z",
+      "updated_at": "2024-12-15T16:45:33Z"
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440006",
+      "timestamp": "2024-12-15T17:15:22Z",
+      "user_email": "sarah.chen@acme-corp.com",
+      "user_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+      "action_type": "feature_flag_update",
+      "entity_type": "feature_flag",
+      "entity_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "entity_name": "new-checkout-flow",
+      "old_value": "{\"rollout_percentage\": 0}",
+      "new_value": "{\"rollout_percentage\": 5}",
+      "action_description": "updated",
+      "reason": "Fixed timeout issue in CheckoutService. Re-enabling with conservative 5% rollout to verify fix.",
+      "created_at": "2024-12-15T17:15:22Z",
+      "updated_at": "2024-12-15T17:15:22Z"
+    },
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440007",
+      "timestamp": "2024-12-16T10:30:00Z",
+      "user_email": "sarah.chen@acme-corp.com",
+      "user_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+      "action_type": "feature_flag_update",
+      "entity_type": "feature_flag",
+      "entity_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "entity_name": "new-checkout-flow",
+      "old_value": "{\"rollout_percentage\": 5}",
+      "new_value": "{\"rollout_percentage\": 100}",
+      "action_description": "updated",
+      "reason": "Fix verified successful over 24h period. Error rates normal. Rolling out to 100%.",
+      "created_at": "2024-12-16T10:30:00Z",
+      "updated_at": "2024-12-16T10:30:00Z"
+    }
+  ],
+  "insights": {
+    "demonstrates": [
+      "Complete audit trail from creation to full rollout",
+      "User attribution for all manual actions",
+      "System attribution for automated actions (safety rollback)",
+      "Before/after value tracking for all changes",
+      "Business context via reason field",
+      "Timestamp precision for debugging and compliance"
+    ],
+    "compliance_value": [
+      "SOC 2 Type II: Complete audit trail requirement",
+      "GDPR Article 30: Record of processing activities",
+      "PCI DSS 10.2: Audit trail for all changes",
+      "HIPAA: Access and modification tracking"
+    ],
+    "operational_value": [
+      "Debug incidents by reviewing change history",
+      "Understand why rollbacks occurred",
+      "Track who made changes and when",
+      "Analyze patterns in feature flag lifecycle"
+    ]
+  }
+}

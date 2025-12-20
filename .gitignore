@@ -48,5 +48,104 @@ test.log
 app.log
 *.coverage
 
-# Note: Keep backend/__init__.py and backend/app/**/__init__.py 
+# Note: Keep backend/__init__.py and backend/app/**/__init__.py
 # Only ignore root-level __init__.py if accidentally created
+
+# ============================================================================
+# SENSITIVE DATA PROTECTION - Commercial Product
+# ============================================================================
+
+# Customer data and production configurations
+customer-data/
+production-config/
+client-configs/
+*.production.yaml
+*.production.json
+*-prod.env
+*-production.env
+
+# Credentials and secrets
+credentials.json
+secrets.yaml
+*.key
+*.pem
+*.p12
+*.pfx
+*_rsa
+*_dsa
+*_ecdsa
+*_ed25519
+.secrets/
+secrets/
+aws-credentials
+gcp-credentials
+azure-credentials
+
+# Database dumps and backups
+*.sql
+*.dump
+*.backup
+db-backup/
+database-backups/
+*.db
+*.sqlite
+*.sqlite3
+
+# API keys and tokens
+.api-keys
+api-keys.txt
+*.token
+access-tokens/
+
+# License keys
+license-keys/
+*.license
+customer-licenses/
+
+# Internal documentation (not for public consumption)
+internal-docs/
+confidential/
+proprietary/
+
+# Production deployment artifacts
+deploy-prod/
+production-deployment/
+*.production.tfstate
+*.production.tfvars
+
+# Customer-specific code or configurations
+customers/
+client-specific/
+custom-implementations/
+
+# Financial and business data
+invoices/
+contracts/
+financial-data/
+
+# Personal Identifiable Information (PII)
+pii-data/
+user-data/
+customer-info/
+
+# Analytics and metrics data with real user information
+analytics-data/
+metrics-data/*.csv
+user-metrics/
+
+# AWS/Cloud provider specific
+.aws/
+aws-config/
+terraform.tfstate
+terraform.tfstate.backup
+.terraform/
+
+# Docker production builds
+docker-compose.production.yml
+Dockerfile.production
+
+# Monitoring and logging with sensitive data
+logs/
+*.log
+error-logs/
+access-logs/

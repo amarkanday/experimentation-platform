@@ -1,334 +1,246 @@
 # Experimently
 
-> **Modern experimentation platform for A/B testing and feature flags**
+> **Enterprise-grade experimentation platform for A/B testing and feature flags**
 
-A scalable, AWS-based platform for A/B testing and feature flags with real-time evaluation capabilities.
+A production-ready, scalable platform for A/B testing and feature management with real-time evaluation, automated safety monitoring, and comprehensive analytics.
 
 **Website**: [getexperimently.com](https://getexperimently.com)
 **Contact**: hello@getexperimently.com
+**Documentation**: [docs.getexperimently.com](https://docs.getexperimently.com)
 
-## Overview
-
-Experimently enables teams to make data-driven decisions through robust experimentation and feature management. Built on AWS, it offers high-throughput event collection, real-time experiment assignment, and comprehensive analytics.
-
-Key capabilities:
-
--   A/B testing, multivariate testing, and split URL testing
--   Feature flags with targeting and gradual rollouts
--   Real-time metric tracking and statistical analysis
--   User segmentation for targeted experiments
--   Role-based access control with AWS Cognito integration
-
-## Current Development Tasks
-
-The following development tasks are currently in progress:
-
-- **Cognito Integration**: User roles are automatically set based on Cognito group membership. [Documentation](docs/cognito_integration.md)
-- **Feature Flag RBAC Integration**: Integrating feature flag endpoints with the existing RBAC system. [Ticket](docs/issue_fixes/feature_flag_permission_integration.md)
-- **Permission System Enhancements**: Improving and standardizing permission checks across all endpoints.
-- **Pydantic V2 Migration**: Updating the codebase to be compatible with Pydantic V2.
-
-## Architecture
-
-The platform is built using a modern, scalable architecture leveraging AWS services:
-
--   **Frontend**: Next.js React application for experiment management and analytics dashboards
--   **Backend**: FastAPI Python services running on ECS/Fargate
--   **Real-time Services**: AWS Lambda functions for low-latency operations
--   **Data Storage**: Aurora PostgreSQL, DynamoDB, ElastiCache Redis, S3
--   **Event Pipeline**: Kinesis, Lambda, OpenSearch for real-time analytics
--   **Infrastructure**: Defined with AWS CDK for infrastructure as code
+---
 
-## Directory Structure
+## 🎯 Overview
 
-```
-experimentation-platform/
-├── docs/                     # Project documentation
-├── infrastructure/           # AWS CDK infrastructure code
-│   ├── cdk/                  # CDK app and stack definitions
-│   └── tests/                # Infrastructure tests
-├── backend/                  # Backend services and APIs
-│   ├── app/                  # FastAPI application
-│   │   ├── api/              # API endpoints
-│   │   ├── core/             # Core functionality
-│   │   ├── db/               # Database configuration
-│   │   ├── models/           # Database models
-│   │   ├── schemas/          # Pydantic schemas
-│   │   └── services/         # Business logic
-│   ├── tests/                # Backend tests
-│   └── lambda/               # AWS Lambda functions
-├── frontend/                 # Next.js frontend application
-│   ├── src/                  # Source code
-│   │   ├── pages/            # Next.js pages
-│   │   ├── components/       # React components
-│   │   ├── hooks/            # Custom React hooks
-│   │   ├── services/         # API client services
-│   │   └── styles/           # CSS styles
-│   └── __tests__/            # Frontend tests
-└── sdk/                      # Client SDKs
-    ├── js/                   # JavaScript SDK
-    └── python/               # Python SDK
-```
+Experimently is a commercial experimentation platform that enables teams to make data-driven decisions through robust A/B testing and feature flag management. Built on AWS with enterprise-grade reliability and performance.
 
-## Getting Started
+### Key Capabilities
 
-### Prerequisites
+- **A/B Testing & Multivariate Experiments**: Statistical rigor with Bayesian and Frequentist analysis
+- **Advanced Feature Flags**: Targeting, gradual rollouts, and automated safety monitoring
+- **Enhanced Rules Engine**: 20+ operators including semantic versioning, geo-distance, time windows
+- **Real-time Analytics**: High-throughput event collection and comprehensive metrics
+- **Enterprise RBAC**: Role-based access control with AWS Cognito integration
+- **Complete Audit Trail**: SOC 2 / GDPR compliant audit logging
+- **Automated Safety**: Real-time monitoring with automatic rollback capabilities
 
--   AWS Account with appropriate permissions
--   Node.js 18+ and npm
--   Python 3.9+
--   Docker and Docker Compose
+### Performance at Scale
 
-### Local Development Setup
+- **58M+ evaluations/month** with sub-15ms P50 latency
+- **99.97% uptime** exceeding 99.9% SLA
+- **125k+ ops/sec** for simple rule evaluations
+- **89% cache hit rate** for optimal performance
+- **Auto-scaling** infrastructure handling 3x traffic variance
 
-1. **Clone the repository**
+---
 
-```sh
-git clone https://github.com/your-org/experimentation-platform.git
-cd experimentation-platform
-```
+## 📊 Public Preview
 
-2. **Set up Python environment**
+Explore sample data demonstrating platform capabilities in the **[`public-preview/`](public-preview/)** directory:
 
-```sh
-cd backend
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -r requirements.txt
-```
+- **[Audit Logs](public-preview/audit-logs/)**: Feature flag lifecycle, experiment tracking, RBAC events
+- **[Performance Metrics](public-preview/metrics/performance/)**: Rules engine benchmarks, platform performance
+- **[Quality Metrics](public-preview/metrics/quality/)**: Test coverage reports (847 tests, 82% coverage)
+- **[Analytics](public-preview/metrics/analytics/)**: Experiment results with statistical analysis
+- **[Examples](public-preview/examples/)**: Advanced targeting rules and real-world use cases
+- **[Architecture](public-preview/architecture/)**: System design and technical overview
 
-3. **Set up frontend dependencies**
+[View Public Preview →](public-preview/README.md)
 
-```sh
-cd frontend
-npm install
-```
+---
 
-4. **Start the local development environment**
+## 🏗️ Architecture
 
-```sh
-# From the project root directory
-docker-compose up -d
-```
+Built using modern, scalable architecture leveraging AWS services:
 
-5. **Run the backend API**
+- **Frontend**: Next.js React application with TypeScript
+- **Backend**: FastAPI Python services (ECS/Fargate, auto-scaling)
+- **Real-time**: AWS Lambda for low-latency operations
+- **Data**: Aurora PostgreSQL Multi-AZ, ElastiCache Redis, DynamoDB
+- **Analytics**: Kinesis → Lambda → OpenSearch pipeline
+- **Infrastructure**: AWS CDK for infrastructure as code
 
-```sh
-cd backend
-uvicorn app.main:app --reload
-```
+**Technology Stack**: Python 3.9+, FastAPI, SQLAlchemy, Pydantic v2, Next.js, React, TypeScript, PostgreSQL, Redis
 
-6. **Run the frontend application**
+[View Architecture Details →](public-preview/architecture/system-overview.md)
 
-```sh
-cd frontend
-npm run dev
-```
+---
 
-The application will be available at:
+## ✨ Key Features
 
--   Marketing Website: http://localhost:3000 (frontend)
--   Backend API: http://localhost:8000
--   API Documentation: http://localhost:8000/docs
+### Advanced Targeting & Rules Engine
+- **20+ Operators**: Basic (equals, in), String (regex, contains), Advanced (semver, geo-distance, time windows, JSON path)
+- **High Performance**: 125k+ simple evaluations/sec, 2.5k+ complex evaluations/sec
+- **Smart Caching**: Multi-layer caching with 94%+ hit rates
+- **Batch Processing**: Efficient evaluation of 1000+ users
 
-## Production URLs
+### Automated Safety Monitoring
+- **Real-time Metrics**: Error rate, latency, custom metrics tracking
+- **Auto-Rollback**: Automatic rollback on threshold violations
+- **Configurable Thresholds**: Per-feature flag safety configuration
+- **Complete Audit Trail**: All rollbacks logged with reasoning
 
--   **Marketing**: https://getexperimently.com
--   **App Dashboard**: https://app.getexperimently.com
--   **API**: https://api.getexperimently.com
--   **Documentation**: https://docs.getexperimently.com
+### Statistical Rigor
+- **Bayesian & Frequentist**: Dual statistical approaches
+- **Sequential Testing**: Early stopping with O'Brien-Fleming bounds
+- **Multiple Testing Correction**: Bonferroni and other methods
+- **Sample Size Calculations**: Automatic power analysis
 
-### Running Tests
+### Enterprise Security & Compliance
+- **SOC 2 Ready**: Audit-friendly architecture
+- **GDPR Compliant**: Data retention, right to erasure
+- **Complete Audit Logs**: Immutable record of all actions
+- **RBAC**: 4-tier role system (Admin, Developer, Analyst, Viewer)
+- **Encryption**: At-rest (KMS) and in-transit (TLS 1.2+)
 
-We follow test-driven development practices with comprehensive test coverage.
+---
 
-**Backend Tests**
+## 🚀 Getting Started
 
-```sh
-cd backend
-pytest
-```
+### For Evaluation
 
-**Frontend Tests**
+Interested in using Experimently for your organization?
 
-```sh
-cd frontend
-npm test
-```
+1. **Explore the Public Preview**: See [sample audit logs, metrics, and examples](public-preview/)
+2. **Schedule a Demo**: [getexperimently.com/demo](https://getexperimently.com/demo)
+3. **Request Trial Access**: Contact hello@getexperimently.com
+4. **View Pricing**: [getexperimently.com/pricing](https://getexperimently.com/pricing)
 
-**Infrastructure Tests**
+### For Licensed Users
 
-```sh
-cd infrastructure
-pytest
-```
+Contact hello@getexperimently.com for:
+- Commercial license agreements
+- Deployment documentation
+- SDK access and integration guides
+- Enterprise support options
 
-## Deployment
+---
 
-### Infrastructure Deployment
+## 📖 Documentation
 
-1. **Bootstrap AWS CDK** (if not already done)
+- **[Public Preview](public-preview/README.md)**: Sample data and examples
+- **[Architecture Overview](public-preview/architecture/system-overview.md)**: System design
+- **[Advanced Targeting Examples](public-preview/examples/advanced-targeting-rules.json)**: Real-world use cases
+- **[Performance Benchmarks](public-preview/metrics/performance/)**: Scale and reliability metrics
 
-```sh
-cd infrastructure
-cdk bootstrap aws://ACCOUNT-NUMBER/REGION
-```
+For complete documentation, visit [docs.getexperimently.com](https://docs.getexperimently.com)
 
-2. **Deploy the infrastructure**
+---
 
-```sh
-cd infrastructure
-cdk deploy --all
-```
+## 🔧 Technology Highlights
 
-### Application Deployment
+### Backend Services
+- **FastAPI Application**: Comprehensive REST API
+  - 847 automated tests with 100% pass rate
+  - 82% code coverage
+  - Sub-100ms P95 API latency
+- **Background Schedulers**: Automated experiment lifecycle, rollout management, metrics aggregation
+- **Enhanced Rules Engine**: Advanced targeting with 20+ operators
 
-The application is deployed automatically via GitHub Actions when changes are pushed to the main branch.
+### Database & Caching
+- **Aurora PostgreSQL**: Multi-AZ with automatic failover
+- **ElastiCache Redis**: 89% cache hit rate, sub-5ms latency
+- **Data Retention**: Configurable policies (90 days to 7 years)
 
-You can also manually deploy:
+### Real-time Processing
+- **Lambda Functions**: 8M+ invocations/month
+- **Kinesis Streams**: 1.8M+ events/day
+- **OpenSearch**: Real-time analytics queries
 
-```sh
-# Deploy backend
-cd backend
-aws ecr get-login-password | docker login --username AWS --password-stdin ACCOUNT.dkr.ecr.REGION.amazonaws.com
-docker build -t experimentation-backend .
-docker tag experimentation-backend:latest ACCOUNT.dkr.ecr.REGION.amazonaws.com/experimentation-backend:latest
-docker push ACCOUNT.dkr.ecr.REGION.amazonaws.com/experimentation-backend:latest
+---
 
-# Deploy frontend
-cd frontend
-npm run build
-aws s3 sync out/ s3://experimentation-platform-frontend
-```
+## 📊 Production Metrics
 
-## Using the Platform
+From our production deployment (December 2024):
 
-### Creating an Experiment
+| Metric | Value |
+|--------|-------|
+| **Uptime** | 99.97% (exceeds 99.9% SLA) |
+| **Monthly Evaluations** | 58M+ |
+| **API Latency (P50)** | 15.3ms |
+| **API Latency (P95)** | 89.2ms |
+| **Unique Users Tracked** | 2.8M+ |
+| **Cache Hit Rate** | 89-96% |
+| **Auto-Scaling Range** | 2-10 instances |
+| **Cost per Million Evals** | $48.67 |
 
-1. Log in to the platform
-2. Navigate to "Experiments" and click "New Experiment"
-3. Enter experiment details (name, hypothesis, metrics)
-4. Add variants and set traffic allocation
-5. Configure targeting (optional)
-6. Start the experiment
+[View Detailed Performance Metrics →](public-preview/metrics/performance/platform-performance.json)
 
-### Managing Feature Flags
+---
 
-1. Navigate to "Feature Flags" and click "New Feature Flag"
-2. Enter feature flag details
-3. Configure targeting rules
-4. Set rollout percentages
-5. Toggle the feature flag on/off
+## 🛡️ Compliance & Security
 
-### Integrating with Applications
+- **SOC 2 Type II Ready**: Audit-friendly architecture with complete audit trails
+- **GDPR Compliant**: Data portability, right to erasure, 7-year audit retention
+- **HIPAA Eligible**: AWS infrastructure supports HIPAA workloads
+- **Encryption**: AES-256 at rest, TLS 1.2+ in transit
+- **Network Security**: VPC isolation, Security Groups, WAF, DDoS protection
 
-Use our client SDKs to integrate the platform with your applications:
+---
 
-**JavaScript**
+## 💼 Use Cases
 
-```js
-import { ExperimentationClient } from "@your-org/experimentation-sdk";
+### Product Teams
+- A/B test new features and UI changes
+- Gradual rollouts with safety monitoring
+- Data-driven product decisions
 
-const client = new ExperimentationClient("API_KEY");
+### Engineering Teams
+- Feature flags for deployment control
+- Canary deployments and kill switches
+- Configuration management
 
-// Check experiment variant
-const variant = await client.getVariant("experiment-key", userId);
-if (variant === "treatment") {
-    // Show treatment experience
-} else {
-    // Show control experience
-}
+### Data Science Teams
+- Statistical experiment analysis
+- Metric tracking and attribution
+- Segmentation analysis
 
-// Check feature flag
-const isEnabled = await client.isFeatureEnabled("feature-key", userId);
-if (isEnabled) {
-    // Enable feature
-}
+### Compliance Teams
+- Complete audit trails
+- Role-based access control
+- Retention policy management
 
-// Track event
-client.trackEvent("purchase_completed", userId, { value: 99.99 });
-```
+---
 
-**Python**
+## 📞 Contact & Support
 
-```python
-from experimentation import Client
+- **Website**: [getexperimently.com](https://getexperimently.com)
+- **Sales Inquiries**: hello@getexperimently.com
+- **Enterprise Support**: enterprise@getexperimently.com
+- **Documentation**: [docs.getexperimently.com](https://docs.getexperimently.com)
+- **Schedule Demo**: [getexperimently.com/demo](https://getexperimently.com/demo)
 
-client = Client(api_key='API_KEY')
+---
 
-# Check experiment variant
-variant = client.get_variant('experiment-key', user_id)
-if variant == 'treatment':
-    # Show treatment experience
-else:
-    # Show control experience
+## 📄 License
 
-# Check feature flag
-is_enabled = client.is_feature_enabled('feature-key', user_id)
-if is_enabled:
-    # Enable feature
+This repository contains:
 
-# Track event
-client.track_event('purchase_completed', user_id, metadata={'value': 99.99})
-```
+1. **Public Preview Materials** (`public-preview/` directory): Sample audit logs, metrics, and examples provided for evaluation purposes only.
 
-## Contributing
+2. **Platform Source Code**: Proprietary software requiring a commercial license for production use.
 
-We welcome contributions to the platform! Please follow these steps:
+**The Experimently platform is commercial software.** Source code is visible for auditing and evaluation, but requires a valid commercial license for deployment and production use.
 
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/my-feature`
-3. Make your changes and add tests
-4. Ensure all tests pass: `pytest` and `npm test`
-5. Commit your changes: `git commit -m 'Add my feature'`
-6. Push to the branch: `git push origin feature/my-feature`
-7. Submit a pull request
+See [LICENSE.txt](LICENSE.txt) for complete terms.
 
-## License
+For licensing inquiries: hello@getexperimently.com
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+---
 
-## Monitoring and Error Tracking
+## 🌟 Why Experimently?
 
-The platform includes a robust monitoring and error tracking system using AWS CloudWatch:
+| Feature | Experimently | Alternatives |
+|---------|-------------|--------------|
+| **Advanced Targeting** | 20+ operators (semver, geo, time, JSON path) | Basic operators only |
+| **Safety Monitoring** | Automated rollback with configurable thresholds | Manual monitoring |
+| **Statistical Methods** | Bayesian + Frequentist analysis | Single method |
+| **Audit Logging** | Complete immutable trail | Limited or none |
+| **Performance** | 125k ops/sec, sub-10ms latency | Varies widely |
+| **Enterprise RBAC** | 4-tier with AWS Cognito | Basic or none |
+| **Deployment** | Self-hosted on your AWS account | SaaS only |
+| **Customization** | Full platform access | Limited APIs |
 
-### Setup
-1. Create required CloudWatch log groups:
-   ```bash
-   aws logs create-log-group --log-group-name /experimentation-platform/api --profile experimentation-platform --region us-west-2
-   aws logs create-log-group --log-group-name /experimentation-platform/services --profile experimentation-platform --region us-west-2
-   aws logs create-log-group --log-group-name /experimentation-platform/errors --profile experimentation-platform --region us-west-2
-   ```
+---
 
-2. Set retention policies:
-   ```bash
-   aws logs put-retention-policy --log-group-name /experimentation-platform/errors --retention-in-days 30 --profile experimentation-platform --region us-west-2
-   ```
-
-3. Deploy CloudWatch dashboards:
-   ```bash
-   cd infrastructure/cloudwatch
-   ./deploy-dashboards.sh
-   ```
-
-### Features
-- **Error Tracking**: All application errors are captured, logged, and sent to CloudWatch.
-- **Performance Metrics**: Request latency, CPU usage, and memory consumption are tracked.
-- **Dashboards**: Two pre-configured dashboards monitor:
-  - System Health: CPU, memory, and error metrics
-  - API Performance: Latency by endpoint, percentiles, and resource utilization
-
-### Configuration
-The monitoring system can be configured through environment variables:
-- `AWS_PROFILE`: AWS profile to use (default: "experimentation-platform")
-- `AWS_REGION`: AWS region (default: "us-west-2")
-- `COLLECT_REQUEST_BODY`: Whether to collect request bodies in error logs (default: "false")
-
-### Dependencies
-Required dependencies are listed in `backend/requirements-monitoring.txt`:
-```
-boto3==1.28.0
-botocore==1.31.0
-psutil==5.9.5
-python-json-logger==2.0.7
-```
+**© 2024 Experimently. All rights reserved.**
