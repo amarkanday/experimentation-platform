@@ -12,6 +12,7 @@ from pydantic import (
     BaseModel,
     Field,
     field_validator,
+    field_serializer,
     model_validator,
     ConfigDict,
     UUID4,
@@ -377,6 +378,14 @@ class ExperimentResponse(BaseModel):
     metrics: List[MetricResponse]
 
     model_config = ConfigDict(from_attributes=True)
+
+    @field_validator('status', 'experiment_type', mode='before')
+    @classmethod
+    def convert_enum_to_string(cls, value):
+        """Convert enum values to strings before validation."""
+        if hasattr(value, 'value'):
+            return value.value
+        return value
 
 
 class ExperimentListResponse(BaseModel):

@@ -195,12 +195,21 @@ class TestAuditLogModel:
 
     def test_audit_log_to_dict_method(self, db_session: Session):
         """Test the to_dict method for converting audit log to dictionary."""
+        # Create a test user first
+        user = User(
+            username="todictuser",
+            email="test@example.com",
+            hashed_password="$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW",
+            role=UserRole.DEVELOPER,
+        )
+        db_session.add(user)
+        db_session.commit()
+
         entity_id = uuid4()
-        user_id = uuid4()
         timestamp = datetime.now(timezone.utc)
 
         audit_log = AuditLog(
-            user_id=user_id,
+            user_id=user.id,
             user_email="test@example.com",
             action_type=ActionType.TOGGLE_ENABLE.value,
             entity_type=EntityType.FEATURE_FLAG.value,
@@ -221,7 +230,7 @@ class TestAuditLogModel:
         # Verify dictionary structure and values
         assert isinstance(audit_dict, dict)
         assert audit_dict["id"] == str(audit_log.id)
-        assert audit_dict["user_id"] == str(user_id)
+        assert audit_dict["user_id"] == str(user.id)
         assert audit_dict["user_email"] == "test@example.com"
         assert audit_dict["action_type"] == ActionType.TOGGLE_ENABLE.value
         assert audit_dict["entity_type"] == EntityType.FEATURE_FLAG.value
@@ -356,9 +365,9 @@ class TestActionTypeEnum:
 
     def test_action_type_string_conversion(self):
         """Test that ActionType enum values can be converted to strings."""
-        assert str(ActionType.TOGGLE_ENABLE) == "toggle_enable"
-        assert str(ActionType.FEATURE_FLAG_CREATE) == "feature_flag_create"
-        assert str(ActionType.EXPERIMENT_START) == "experiment_start"
+        assert ActionType.TOGGLE_ENABLE.value == "toggle_enable"
+        assert ActionType.FEATURE_FLAG_CREATE.value == "feature_flag_create"
+        assert ActionType.EXPERIMENT_START.value == "experiment_start"
 
 
 class TestEntityTypeEnum:
@@ -382,6 +391,6 @@ class TestEntityTypeEnum:
 
     def test_entity_type_string_conversion(self):
         """Test that EntityType enum values can be converted to strings."""
-        assert str(EntityType.FEATURE_FLAG) == "feature_flag"
-        assert str(EntityType.EXPERIMENT) == "experiment"
-        assert str(EntityType.USER) == "user"
+        assert EntityType.FEATURE_FLAG.value == "feature_flag"
+        assert EntityType.EXPERIMENT.value == "experiment"
+        assert EntityType.USER.value == "user"

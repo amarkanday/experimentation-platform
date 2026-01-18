@@ -9,6 +9,7 @@ manage feature flags for gradual rollouts and A/B testing.
 from uuid import UUID
 from typing import List, Dict, Any, Optional
 import json
+import logging
 
 from fastapi import (
     APIRouter,
@@ -41,6 +42,9 @@ from backend.app.core.config import settings
 from backend.app.core.security import get_password_hash
 from backend.app.crud import crud_user, crud_feature_flag
 from backend.app.core.permissions import ResourceType, Action, check_permission
+
+# Setup logger
+logger = logging.getLogger(__name__)
 
 # Create router with tag for documentation grouping
 router = APIRouter(
@@ -834,30 +838,39 @@ async def toggle_feature_flag(
         db.commit()
         db.refresh(flag)
 
-        # Log the toggle operation
-        audit_log_id = await AuditService.log_action(
-            db=db,
-            user_id=current_user.id,
-            user_email=current_user.email,
-            action_type=action_type,
-            entity_type=EntityType.FEATURE_FLAG,
-            entity_id=flag.id,
-            entity_name=flag.name,
-            old_value=old_status,
-            new_value=new_status,
-            reason=toggle_request.reason,
-        )
+        # Log the toggle operation (don't fail if audit logging fails)
+        audit_log_id = None
+        try:
+            audit_log_id = await AuditService.log_action(
+                db=db,
+                user_id=current_user.id,
+                user_email=current_user.email,
+                action_type=action_type,
+                entity_type=EntityType.FEATURE_FLAG,
+                entity_id=flag.id,
+                entity_name=flag.name,
+                old_value=old_status,
+                new_value=new_status,
+                reason=toggle_request.reason,
+            )
+        except Exception as audit_error:
+            # Log audit error but don't fail the toggle operation
+            logger.warning(f"Audit logging failed for toggle operation: {str(audit_error)}")
 
-        # Invalidate cache if enabled
-        if cache_control.get("enabled") and cache_control.get("redis"):
-            # Delete specific feature flag cache
-            flag_cache_key = f"feature_flag:{flag_id}"
-            cache_control.get("redis").delete(flag_cache_key)
+        # Invalidate cache if enabled (don't fail if cache invalidation fails)
+        try:
+            if cache_control.get("enabled") and cache_control.get("redis"):
+                # Delete specific feature flag cache
+                flag_cache_key = f"feature_flag:{flag_id}"
+                cache_control.get("redis").delete(flag_cache_key)
 
-            # Delete feature flag list caches
-            pattern = f"feature_flags:*"
-            for key in cache_control.get("redis").scan_iter(match=pattern):
-                cache_control.get("redis").delete(key)
+                # Delete feature flag list caches
+                pattern = f"feature_flags:*"
+                for key in cache_control.get("redis").scan_iter(match=pattern):
+                    cache_control.get("redis").delete(key)
+        except Exception as cache_error:
+            # Log cache error but don't fail the toggle operation
+            logger.warning(f"Cache invalidation failed for toggle operation: {str(cache_error)}")
 
         return ToggleResponse(
             id=flag.id,

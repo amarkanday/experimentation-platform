@@ -118,7 +118,7 @@ class ToggleResponse(BaseModel):
     key: str
     status: str
     updated_at: datetime
-    audit_log_id: UUID
+    audit_log_id: Optional[UUID] = None  # Can be None if audit logging fails
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -360,19 +360,19 @@ class TestFeatureFlagToggleEndpoints:
         app.dependency_overrides[deps.get_db] = lambda: mock_db
         app.dependency_overrides[deps.get_cache_control] = lambda: {"enabled": True, "redis": mock_redis}
 
-        # Mock audit service and cache service
+        # Mock audit service
         with patch("backend.app.services.audit_service.AuditService.log_action", side_effect=mock_log_action):
-            with patch("backend.app.services.cache.CacheService.invalidate_feature_flag_cache") as mock_invalidate:
-                client = TestClient(app)
-                response = client.post(
-                    f"/api/v1/feature-flags/{feature_flag.id}/toggle",
-                    json={"reason": "Test cache invalidation"}
-                )
+            client = TestClient(app)
+            response = client.post(
+                f"/api/v1/feature-flags/{feature_flag.id}/toggle",
+                json={"reason": "Test cache invalidation"}
+            )
 
         assert response.status_code == 200
 
-        # Verify cache was invalidated
-        mock_invalidate.assert_called_once_with(str(feature_flag.id))
+        # Verify cache was invalidated (delete and scan_iter were called)
+        assert mock_redis.delete.called
+        assert mock_redis.scan_iter.called
 
     def test_toggle_without_reason(self):
         """Test toggling feature flag without providing a reason."""

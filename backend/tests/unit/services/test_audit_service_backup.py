@@ -30,12 +30,21 @@ class TestAuditServiceLogging:
     @pytest.mark.asyncio
     async def test_log_toggle_operation_success(self, db_session: Session):
         """Test successful toggle operation logging."""
-        user_id = uuid4()
+        # Create a test user first
+        user = User(
+            username="toggleuser",
+            email="test@example.com",
+            hashed_password="$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW",
+            role=UserRole.DEVELOPER,
+        )
+        db_session.add(user)
+        db_session.commit()
+
         entity_id = uuid4()
 
         audit_log_id = await AuditService.log_toggle_operation(
             db=db_session,
-            user_id=user_id,
+            user_id=user.id,
             user_email="test@example.com",
             action_type="toggle_enable",
             entity_id=entity_id,
@@ -51,7 +60,7 @@ class TestAuditServiceLogging:
         # Retrieve and verify the audit log
         audit_log = db_session.query(AuditLog).filter(AuditLog.id == audit_log_id).first()
         assert audit_log is not None
-        assert audit_log.user_id == user_id
+        assert audit_log.user_id == user.id
         assert audit_log.user_email == "test@example.com"
         assert audit_log.action_type == "toggle_enable"
         assert audit_log.entity_type == EntityType.FEATURE_FLAG.value
@@ -64,7 +73,16 @@ class TestAuditServiceLogging:
     @pytest.mark.asyncio
     async def test_log_action_success(self, db_session: Session):
         """Test successful general action logging."""
-        user_id = uuid4()
+        # Create a test user first
+        user = User(
+            username="actionuser",
+            email="action@example.com",
+            hashed_password="$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW",
+            role=UserRole.DEVELOPER,
+        )
+        db_session.add(user)
+        db_session.commit()
+
         entity_id = uuid4()
 
         with patch('asyncio.get_event_loop') as mock_get_loop:
@@ -79,7 +97,7 @@ class TestAuditServiceLogging:
 
             audit_log_id = await AuditService.log_action(
                 db=db_session,
-                user_id=user_id,
+                user_id=user.id,
                 user_email="action@example.com",
                 action_type=ActionType.FEATURE_FLAG_CREATE,
                 entity_type=EntityType.FEATURE_FLAG,
@@ -96,7 +114,7 @@ class TestAuditServiceLogging:
             # Retrieve and verify the audit log
             audit_log = db_session.query(AuditLog).filter(AuditLog.id == audit_log_id).first()
             assert audit_log is not None
-            assert audit_log.user_id == user_id
+            assert audit_log.user_id == user.id
             assert audit_log.user_email == "action@example.com"
             assert audit_log.action_type == ActionType.FEATURE_FLAG_CREATE.value
             assert audit_log.entity_type == EntityType.FEATURE_FLAG.value
@@ -177,12 +195,21 @@ class TestAuditServiceLogging:
 
     def test_create_audit_log_sync(self, db_session: Session):
         """Test the synchronous audit log creation method."""
-        user_id = uuid4()
+        # Create a test user first
+        user = User(
+            username="syncuser",
+            email="sync@example.com",
+            hashed_password="$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW",
+            role=UserRole.DEVELOPER,
+        )
+        db_session.add(user)
+        db_session.commit()
+
         entity_id = uuid4()
 
         audit_log_id = AuditService._create_audit_log_sync(
             db=db_session,
-            user_id=user_id,
+            user_id=user.id,
             user_email="sync@example.com",
             action_type=ActionType.EXPERIMENT_CREATE,
             entity_type=EntityType.EXPERIMENT,
@@ -198,7 +225,7 @@ class TestAuditServiceLogging:
 
         audit_log = db_session.query(AuditLog).filter(AuditLog.id == audit_log_id).first()
         assert audit_log is not None
-        assert audit_log.user_id == user_id
+        assert audit_log.user_id == user.id
         assert audit_log.action_type == ActionType.EXPERIMENT_CREATE.value
         assert audit_log.entity_type == EntityType.EXPERIMENT.value
 

@@ -226,13 +226,14 @@ async def create_experiment(
         experiment_data = experiment_in.model_dump()
         experiment_data["owner_id"] = current_user.id
 
-        # Ensure status is properly set as an enum
-        if "status" in experiment_data and isinstance(experiment_data["status"], str):
-            try:
-                experiment_data["status"] = ExperimentStatus[experiment_data["status"].upper()]
-            except (KeyError, AttributeError):
+        # Ensure status is a string (convert enum to value if needed)
+        if "status" in experiment_data:
+            from backend.app.models.experiment import ExperimentStatus
+            if isinstance(experiment_data["status"], ExperimentStatus):
+                experiment_data["status"] = experiment_data["status"].value
+            elif not isinstance(experiment_data["status"], str):
                 # Default to DRAFT if invalid status
-                experiment_data["status"] = ExperimentStatus.DRAFT
+                experiment_data["status"] = "draft"
 
         # Create experiment
         experiment = experiment_service.create_experiment(
