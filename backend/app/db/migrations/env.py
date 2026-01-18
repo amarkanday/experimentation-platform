@@ -9,9 +9,11 @@ from alembic import context
 import os
 import sys
 
-# Add parent directory to path for imports
-parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, parent_dir)
+# Add project root to path for imports (backend/migrations -> backend -> project root)
+migrations_dir = os.path.dirname(os.path.abspath(__file__))  # backend/migrations
+backend_dir = os.path.dirname(migrations_dir)  # backend
+project_root = os.path.dirname(backend_dir)  # project root
+sys.path.insert(0, project_root)
 
 # Import your models
 from backend.app.models import Base

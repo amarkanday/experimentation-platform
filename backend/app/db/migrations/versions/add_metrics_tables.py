@@ -15,7 +15,7 @@ down_revision = 'ba93ceb4d658'
 branch_labels = None
 depends_on = None
 
-schema_name = 'app'
+schema_name = 'experimentation'
 
 def upgrade():
     # Create MetricType enum

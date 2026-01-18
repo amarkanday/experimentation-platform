@@ -81,7 +81,7 @@ class Settings(BaseSettings):
             password=info.data.get("POSTGRES_PASSWORD"),
             host=info.data.get("POSTGRES_SERVER"),
             port=int(info.data.get("POSTGRES_PORT", 5432)),
-            path=f"/{info.data.get('POSTGRES_DB', '')}",
+            path=info.data.get('POSTGRES_DB', ''),
         )
 
     @field_validator("SQLALCHEMY_DATABASE_URI", mode="before")
@@ -101,7 +101,7 @@ class Settings(BaseSettings):
             password=info.data.get("POSTGRES_PASSWORD"),
             host=info.data.get("POSTGRES_SERVER"),
             port=int(info.data.get("POSTGRES_PORT", 5432)),
-            path=f"/{info.data.get('POSTGRES_DB', '')}",
+            path=info.data.get('POSTGRES_DB', ''),
         )
 
     @field_validator("REDIS_URI", mode="before")
