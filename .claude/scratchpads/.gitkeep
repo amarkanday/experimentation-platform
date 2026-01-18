@@ -1,0 +1,36 @@
+# Scratchpads Directory
+
+This directory is used for communication between Claude instances during multi-Claude workflows.
+
+## Purpose
+
+When running multiple Claude instances in parallel (e.g., PLANNER, IMPLEMENTER, TESTER, REVIEWER, REFACTORER), they communicate via scratchpad files written to this directory.
+
+## Usage
+
+Each Claude instance:
+- **Reads** relevant scratchpads to understand what others have done
+- **Writes** its own scratchpad to share progress/findings with others
+
+## Example Files
+
+During EP-010 Phase 4, you might see:
+- `ep010-phase4-plan.md` - PLANNER's implementation plan
+- `implementation-log.md` - IMPLEMENTER's progress log
+- `test-results.md` - TESTER's test results and failures
+- `review.md` - REVIEWER's code review feedback
+- `refactoring-log.md` - REFACTORER's fix log
+- `final-validation.md` - TESTER's final validation report
+- `final-review.md` - REVIEWER's final approval/concerns
+
+## Cleanup
+
+After completing a task:
+1. Archive scratchpads to `.claude/archive/<task-name>/`
+2. Commit the archive for future reference
+3. Clear this directory for the next task
+
+## See Also
+
+- `.claude/EP010_PHASE4_EXECUTION_PLAN.md` - Detailed multi-Claude workflow
+- `.claude/QUICKSTART_PHASE4.md` - Multi-Claude patterns guide
