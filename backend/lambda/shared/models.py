@@ -7,7 +7,7 @@ Provides Pydantic models for type safety and validation across all Lambda functi
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 from enum import Enum
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 
 
 class ExperimentStatus(str, Enum):
@@ -32,8 +32,8 @@ class Assignment(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.utcnow, description="Assignment timestamp")
     context: Optional[Dict[str, Any]] = Field(default=None, description="User context at assignment")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "assignment_id": "assign_123",
                 "user_id": "user_456",
@@ -44,6 +44,7 @@ class Assignment(BaseModel):
                 "context": {"country": "US", "platform": "web"}
             }
         }
+    )
 
 
 class VariantConfig(BaseModel):
@@ -71,7 +72,8 @@ class ExperimentConfig(BaseModel):
     targeting_rules: Optional[List[Dict[str, Any]]] = Field(default=None, description="Targeting rules")
     salt: Optional[str] = Field(default=None, description="Salt for hashing")
 
-    @validator('variants')
+    @field_validator('variants')
+    @classmethod
     def validate_variant_allocations(cls, v):
         """Validate that variant allocations sum to ~1.0."""
         total = sum(variant.allocation for variant in v)
@@ -79,9 +81,9 @@ class ExperimentConfig(BaseModel):
             raise ValueError(f"Variant allocations must sum to 1.0, got {total}")
         return v
 
-    class Config:
-        use_enum_values = True
-        json_schema_extra = {
+    model_config = ConfigDict(
+        use_enum_values=True,
+        json_schema_extra={
             "example": {
                 "experiment_id": "exp_123",
                 "key": "checkout_redesign",
@@ -95,6 +97,7 @@ class ExperimentConfig(BaseModel):
                 "salt": None
             }
         }
+    )
 
 
 class FeatureFlagConfig(BaseModel):
@@ -111,8 +114,8 @@ class FeatureFlagConfig(BaseModel):
     default_variant: Optional[str] = Field(default=None, description="Default variant key")
     variants: Optional[List[VariantConfig]] = Field(default=None, description="List of variants")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "flag_id": "flag_123",
                 "key": "new_checkout",
@@ -123,6 +126,7 @@ class FeatureFlagConfig(BaseModel):
                 "variants": None
             }
         }
+    )
 
 
 class EventData(BaseModel):
@@ -139,8 +143,8 @@ class EventData(BaseModel):
     properties: Optional[Dict[str, Any]] = Field(default=None, description="Event properties")
     metadata: Optional[Dict[str, Any]] = Field(default=None, description="Event metadata")
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "event_id": "evt_123",
                 "event_type": "conversion",
@@ -151,6 +155,7 @@ class EventData(BaseModel):
                 "metadata": {"source": "mobile_app", "version": "1.2.3"}
             }
         }
+    )
 
 
 class LambdaResponse(BaseModel):
@@ -166,11 +171,12 @@ class LambdaResponse(BaseModel):
         description="Response headers"
     )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "statusCode": 200,
                 "body": {"variant": "treatment", "experiment_id": "exp_123"},
                 "headers": {"Content-Type": "application/json"}
             }
         }
+    )
